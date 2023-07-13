@@ -1,42 +1,45 @@
+// Copyright (C) 2020-2022 Intel Corporation
+//
+// SPDX-License-Identifier: MIT
+
 import React from 'react';
 import { connect } from 'react-redux';
-import { registerAsync } from '../../actions/auth-actions';
-import { CombinedState } from '../../reducers/root-reducer';
-import RegisterPageComponent from '../../components/register-page/register-page';
+import { registerAsync } from 'actions/auth-actions';
+import RegisterPageComponent from 'components/register-page/register-page';
+import { UserConfirmation } from 'components/register-page/register-form';
+import { CombinedState, UserAgreement } from 'reducers';
 
 interface StateToProps {
-    registerError: any;
+    fetching: boolean;
+    userAgreements: UserAgreement[];
 }
 
 interface DispatchToProps {
-    register: (username: string, firstName: string,
-        lastName: string, email: string,
-        password1: string, password2: string) => void;
+    onRegister: (
+        username: string,
+        firstName: string,
+        lastName: string,
+        email: string,
+        password: string,
+        userAgreement: UserConfirmation[],
+    ) => void;
 }
 
 function mapStateToProps(state: CombinedState): StateToProps {
     return {
-        registerError: state.auth.registerError,
+        fetching: state.auth.fetching || state.userAgreements.fetching,
+        userAgreements: state.userAgreements.list,
     };
 }
 
 function mapDispatchToProps(dispatch: any): DispatchToProps {
     return {
-        register: (...args) => dispatch(registerAsync(...args))
-    }
+        onRegister: (...args): void => dispatch(registerAsync(...args)),
+    };
 }
 
-type RegisterPageContainerProps = StateToProps & DispatchToProps;
-function RegisterPageContainer(props: RegisterPageContainerProps) {
-    return (
-        <RegisterPageComponent
-            registerError={props.registerError ? props.registerError.toString() : ''}
-            onRegister={props.register}
-        />
-    );
+function RegisterPageContainer(props: StateToProps & DispatchToProps): JSX.Element {
+    return <RegisterPageComponent {...props} />;
 }
 
-export default connect(
-    mapStateToProps,
-    mapDispatchToProps,
-)(RegisterPageContainer);
+export default connect(mapStateToProps, mapDispatchToProps)(RegisterPageContainer);

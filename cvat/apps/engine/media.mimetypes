@@ -61,6 +61,7 @@ video/mp2t	m2t
 video/mp2t	bdmv
 video/vnd.mpegurl	m4u
 video/mp4	m4v
+video/mxf	mxf
 
 # possible image formats
 image/x-minolta-mrw	mrw
@@ -105,7 +106,8 @@ image/x-jng	jng
 image/jp2	jp2
 image/x-portable-bitmap	pbm
 image/x-eps	epsf
-image/x-photo-cd	pcd
+image/x.point-cloud-data pcd
+image/x.kitti-velodyne bin
 image/jpeg	jpe
 image/jp2	jpf
 image/jpeg	jpg

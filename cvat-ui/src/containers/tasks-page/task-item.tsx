@@ -1,41 +1,30 @@
-import React from 'react';
+// Copyright (C) 2020-2022 Intel Corporation
+// Copyright (C) 2022-2023 CVAT.ai Corporation
+//
+// SPDX-License-Identifier: MIT
+
 import { connect } from 'react-redux';
 
 import {
-    TasksQuery,
-    SupportedPlugins,
-} from '../../reducers/interfaces';
+    TasksQuery, CombinedState, ActiveInference, PluginComponent,
+} from 'reducers';
 
-import {
-    CombinedState,
-} from '../../reducers/root-reducer';
+import TaskItemComponent from 'components/tasks-page/task-item';
 
-import TaskItemComponent from '../../components/tasks-page/task-item'
-
-import {
-    getTasksAsync,
-    dumpAnnotationsAsync,
-    loadAnnotationsAsync,
-    deleteTaskAsync,
-} from '../../actions/tasks-actions';
+import { getTasksAsync } from 'actions/tasks-actions';
+import { cancelInferenceAsync } from 'actions/models-actions';
 
 interface StateToProps {
-    installedTFAnnotation: boolean;
-    installedAutoAnnotation: boolean;
-    dumpActivities: string[] | null;
-    loadActivity: string | null;
-    deleteActivity: boolean | null;
-    previewImage: string;
+    deleted: boolean;
+    hidden: boolean;
     taskInstance: any;
-    loaders: any[];
-    dumpers: any[];
+    activeInference: ActiveInference | null;
+    ribbonPlugins: PluginComponent[];
 }
 
 interface DispatchToProps {
-    getTasks: (query: TasksQuery) => void;
-    delete: (taskInstance: any) => void;
-    dump: (task: any, format: string) => void;
-    load: (task: any, format: string, file: File) => void;
+    getTasks(query: TasksQuery): void;
+    cancelAutoAnnotation(): void;
 }
 
 interface OwnProps {
@@ -45,65 +34,27 @@ interface OwnProps {
 
 function mapStateToProps(state: CombinedState, own: OwnProps): StateToProps {
     const task = state.tasks.current[own.idx];
-    const { formats } = state;
-    const { dumps } = state.tasks.activities;
-    const { loads } = state.tasks.activities;
     const { deletes } = state.tasks.activities;
-    const { plugins } = state.plugins;
     const id = own.taskID;
 
     return {
-        installedTFAnnotation: plugins.TF_ANNOTATION,
-        installedAutoAnnotation: plugins.AUTO_ANNOTATION,
-        dumpActivities: dumps.byTask[id] ? dumps.byTask[id] : null,
-        loadActivity: loads.byTask[id] ? loads.byTask[id] : null,
-        deleteActivity: deletes.byTask[id] ? deletes.byTask[id] : null,
-        previewImage: task.preview,
-        taskInstance: task.instance,
-        loaders: formats.loaders,
-        dumpers: formats.dumpers,
+        hidden: state.tasks.hideEmpty && task.size === 0,
+        deleted: id in deletes ? deletes[id] === true : false,
+        taskInstance: task,
+        activeInference: state.models.inferences[id] || null,
+        ribbonPlugins: state.plugins.components.taskItem.ribbon,
     };
 }
 
-function mapDispatchToProps(dispatch: any): DispatchToProps {
+function mapDispatchToProps(dispatch: any, own: OwnProps): DispatchToProps {
     return {
-        getTasks: (query: TasksQuery): void => {
+        getTasks(query: TasksQuery): void {
             dispatch(getTasksAsync(query));
         },
-        dump: (task: any, dumper: any): void => {
-            dispatch(dumpAnnotationsAsync(task, dumper));
+        cancelAutoAnnotation(): void {
+            dispatch(cancelInferenceAsync(own.taskID));
         },
-        load: (task: any, loader: any, file: File): void => {
-            dispatch(loadAnnotationsAsync(task, loader, file));
-        },
-        delete: (taskInstance: any): void => {
-            dispatch(deleteTaskAsync(taskInstance));
-        },
-    }
+    };
 }
 
-type TasksItemContainerProps = StateToProps & DispatchToProps & OwnProps;
-
-function TaskItemContainer(props: TasksItemContainerProps) {
-    return (
-        <TaskItemComponent
-            installedTFAnnotation={props.installedTFAnnotation}
-            installedAutoAnnotation={props.installedAutoAnnotation}
-            deleted={props.deleteActivity === true}
-            taskInstance={props.taskInstance}
-            previewImage={props.previewImage}
-            dumpActivities={props.dumpActivities}
-            loadActivity={props.loadActivity}
-            loaders={props.loaders}
-            dumpers={props.dumpers}
-            onDeleteTask={props.delete}
-            onLoadAnnotation={props.load}
-            onDumpAnnotation={props.dump}
-        />
-    );
-}
-
-export default connect(
-    mapStateToProps,
-    mapDispatchToProps,
-)(TaskItemContainer);
+export default connect(mapStateToProps, mapDispatchToProps)(TaskItemComponent);

@@ -1,0 +1,57 @@
+services:
+  cvat_worker_webhooks:
+    depends_on:
+      - webhook_receiver
+    entrypoint:
+      - /bin/bash
+      - -euc
+        # We want to exclude webhooks_receiver from SSRF protection,
+        # so that the server can access it.
+        # --allow-address doesn't allow hostnames, so we have to resolve
+        # the IP address ourselves.
+      - |
+        webhooks_ip_addr="$$(getent hosts webhooks | head -1 | awk '{ print $$1 }')"
+        export SMOKESCREEN_OPTS=--allow-address="$$webhooks_ip_addr"
+        exec /usr/bin/supervisord -c supervisord/worker.webhooks.conf
+
+  cvat_server:
+    depends_on:
+      - webhook_receiver
+    entrypoint:
+      - /bin/bash
+      - -euc
+      - |
+        webhooks_ip_addr="$$(getent hosts webhooks | head -1 | awk '{ print $$1 }')"
+        export SMOKESCREEN_OPTS=--allow-address="$$webhooks_ip_addr"
+        exec /home/django/backend_entrypoint.sh
+
+
+  webhook_receiver:
+    image: python:3.9-slim
+    restart: always
+    command: python3 /tmp/server.py
+    init: true
+    env_file:
+      - ./tests/python/webhook_receiver/.env
+    expose:
+      - ${SERVER_PORT}
+    volumes:
+      - ./tests/python/webhook_receiver:/tmp
+    networks:
+      cvat:
+        aliases:
+          - webhooks
+
+  git_server:
+    image: alpine/git
+    restart: always
+    depends_on:
+      - cvat_server
+    entrypoint: /mnt/scripts/entrypoint.sh
+    volumes:
+      - ./tests/git_server/:/mnt/scripts:ro
+      - cvat_keys:/mnt/keys:ro
+    networks:
+      cvat:
+        aliases:
+          - gitserver

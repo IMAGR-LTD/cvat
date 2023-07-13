@@ -1,15 +1,25 @@
-version: "2.3"
+#
+# Copyright (C) 2018-2022 Intel Corporation
+#
+# SPDX-License-Identifier: MIT
+#
 
 services:
-  cvat:
+  cvat_ci:
+    image: cvat_ci
+    network_mode: host
     build:
-      args:
-        DJANGO_CONFIGURATION: "testing"
-        WITH_TESTS: "yes"
-      network: host
+      context: .
+      dockerfile: Dockerfile.ci
+    depends_on:
+      - cvat_server
     environment:
-      COVERALLS_REPO_TOKEN:
-      TRAVIS:
-      TRAVIS_JOB_ID:
-      TRAVIS_BRANCH:
-      TRAVIS_PULL_REQUEST:
+      CONTAINER_COVERAGE_DATA_DIR:
+      GITHUB_ACTIONS:
+      GITHUB_TOKEN:
+      GITHUB_WORKSPACE:
+      GITHUB_REF:
+      GITHUB_HEAD_REF:
+      GITHUB_RUN_ID:
+    volumes:
+      - ${HOST_COVERAGE_DATA_DIR}:${CONTAINER_COVERAGE_DATA_DIR}

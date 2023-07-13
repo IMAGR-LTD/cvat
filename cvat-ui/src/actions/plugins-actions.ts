@@ -1,45 +1,52 @@
-import { AnyAction, Dispatch, ActionCreator } from 'redux';
-import { ThunkAction } from 'redux-thunk';
-import { SupportedPlugins } from '../reducers/interfaces';
-import PluginChecker from '../utils/plugin-checker';
+// Copyright (C) 2020-2022 Intel Corporation
+// Copyright (C) 2023 CVAT.ai Corporation
+//
+// SPDX-License-Identifier: MIT
+
+import { ActionUnion, createAction, ThunkAction } from 'utils/redux';
+import { PluginsList } from 'reducers';
+import { getCore } from 'cvat-core-wrapper';
+import React from 'react';
+
+const core = getCore();
 
 export enum PluginsActionTypes {
-    CHECKED_ALL_PLUGINS = 'CHECKED_ALL_PLUGINS'
+    GET_PLUGINS = 'GET_PLUGINS',
+    GET_PLUGINS_SUCCESS = 'GET_PLUGINS_SUCCESS',
+    GET_PLUGINS_FAILED = 'GET_PLUGINS_FAILED',
+    ADD_PLUGIN = 'ADD_PLUGIN',
+    ADD_UI_COMPONENT = 'ADD_UI_COMPONENT',
+    REMOVE_UI_COMPONENT = 'REMOVE_UI_COMPONENT',
 }
 
-interface PluginObjects {
-    [plugin: string]: boolean;
-}
+export const pluginActions = {
+    checkPlugins: () => createAction(PluginsActionTypes.GET_PLUGINS),
+    checkPluginsSuccess: (list: PluginsList) => createAction(PluginsActionTypes.GET_PLUGINS_SUCCESS, { list }),
+    checkPluginsFailed: (error: any) => createAction(PluginsActionTypes.GET_PLUGINS_FAILED, { error }),
+    addPlugin: (name: string, destructor: CallableFunction, globalStateDidUpdate?: CallableFunction) => createAction(
+        PluginsActionTypes.ADD_PLUGIN, { name, destructor, globalStateDidUpdate },
+    ),
+    addUIComponent: (
+        path: string,
+        component: React.Component,
+        data: {
+            weight?: number;
+            shouldBeRendered?: (props?: object, state?: object) => boolean;
+        } = {},
+    ) => createAction(PluginsActionTypes.ADD_UI_COMPONENT, { path, component, data }),
+    removeUIComponent: (path: string, component: React.Component) => createAction(
+        PluginsActionTypes.REMOVE_UI_COMPONENT, { path, component },
+    ),
+};
 
-function checkedAllPlugins(plugins: PluginObjects): AnyAction {
-    const action = {
-        type: PluginsActionTypes.CHECKED_ALL_PLUGINS,
-        payload: {
-            plugins,
-        },
-    };
+export type PluginActions = ActionUnion<typeof pluginActions>;
 
-    return action;
-}
-
-export function checkPluginsAsync():
-ThunkAction<Promise<void>, {}, {}, AnyAction> {
-    return async (dispatch: ActionCreator<Dispatch>): Promise<void> => {
-        const plugins: PluginObjects = {};
-
-        const promises: Promise<boolean>[] = [];
-        const keys = Object.keys(SupportedPlugins);
-        for (const key of keys) {
-            const plugin = SupportedPlugins[key as any];
-            promises.push(PluginChecker.check(plugin as SupportedPlugins));
-        }
-
-        const values = await Promise.all(promises);
-        let i = 0;
-        for (const key of keys) {
-            plugins[key] = values[i++];
-        }
-
-        dispatch(checkedAllPlugins(plugins));
-    };
-}
+export const getPluginsAsync = (): ThunkAction => async (dispatch): Promise<void> => {
+    dispatch(pluginActions.checkPlugins());
+    try {
+        const list: PluginsList = await core.server.installedApps();
+        dispatch(pluginActions.checkPluginsSuccess(list));
+    } catch (error) {
+        dispatch(pluginActions.checkPluginsFailed(error));
+    }
+};

@@ -1,3 +1,6 @@
+// Copyright (C) 2021-2022 Intel Corporation
+//
+// SPDX-License-Identifier: MIT
 
 const validationPatterns = {
     validatePasswordLength: {
@@ -22,17 +25,27 @@ const validationPatterns = {
 
     validateUsernameLength: {
         pattern: /(?=.{5,})/,
-        message: 'Username must have at least 8 characters',
+        message: 'Username must have at least 5 characters',
     },
 
     validateUsernameCharacters: {
-        pattern: /^[a-zA-Z0-9_-]{5,}$/,
-        message: 'Only characters (a-z), (A-Z), (0-9), -, _ are available',
+        pattern: /^[a-zA-Z0-9_\-.]{5,}$/,
+        message: 'Only characters (a-z), (A-Z), (0-9), -, _, . are available',
     },
 
+    /*
+        \p{Pd} - dash connectors
+        \p{Pc} - connector punctuations
+        \p{Cf} - invisible formatting indicator
+        \p{L} - any alphabetic character
+        Useful links:
+        https://stackoverflow.com/questions/4323386/multi-language-input-validation-with-utf-8-encoding
+        https://stackoverflow.com/questions/280712/javascript-unicode-regexes
+        https://stackoverflow.com/questions/6377407/how-to-validate-both-chinese-unicode-and-english-name
+    */
     validateName: {
         // eslint-disable-next-line
-        pattern: /^[a-zA-Z]{2,}(([',. -][a-zA-Z ])?[a-zA-Z]*)*$/,
+        pattern: /^(\p{L}|\p{Pd}|\p{Cf}|\p{Pc}|['\s]){2,}$/gu,
         message: 'Invalid name',
     },
 
@@ -52,9 +65,26 @@ const validationPatterns = {
     },
 
     validateURL: {
-        pattern: /^(https?):\/\/[^\s$.?#].[^\s]*$/,
+        // eslint-disable-next-line
+        pattern: /^((https?:\/\/)|((ssh:\/\/)?git@))[^\s$.?#].[^\s]*$/, // url, ssh url, ip
         message: 'URL is not valid',
+    },
+
+    validatePath: {
+        // eslint-disable-next-line
+        pattern: /^\[\/?([A-z0-9-_+]+\/)*([A-z0-9]+\.(xml|zip|json))\]$/,
+        message: 'Git path is not valid',
+    },
+
+    validateOrganizationSlug: {
+        pattern: /^[a-zA-Z\d]+$/,
+        message: 'Only Latin characters and numbers are allowed',
+    },
+
+    validatePhoneNumber: {
+        pattern: /^[+]*[-\s0-9]*$/g,
+        message: 'Input phone number is not correct',
     },
 };
 
-export default { ...validationPatterns };
+export default validationPatterns;

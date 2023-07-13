@@ -1,22 +1,18 @@
-/*
- * Copyright (C) 2018 Intel Corporation
- * SPDX-License-Identifier: MIT
-*/
-
-/* global
-    require:false
-    jest:false
-    describe:false
-*/
+// Copyright (C) 2020-2022 Intel Corporation
+// Copyright (C) 2022 CVAT.ai Corporation
+//
+// SPDX-License-Identifier: MIT
 
 // Setup mock for a server
 jest.mock('../../src/server-proxy', () => {
-    const mock = require('../mocks/server-proxy.mock');
-    return mock;
+    return {
+        __esModule: true,
+        default: require('../mocks/server-proxy.mock'),
+    };
 });
 
 // Initialize api
-window.cvat = require('../../src/api');
+window.cvat = require('../../src/api').default;
 
 describe('Feature: dummy feature', () => {
     test('dummy test', async () => {
@@ -75,7 +71,6 @@ const plugin = {
         },
     },
 };
-
 
 async function test() {
     await window.cvat.plugins.register(plugin);

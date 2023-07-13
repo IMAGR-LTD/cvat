@@ -1,26 +1,28 @@
-import React from 'react';
+// Copyright (C) 2020-2022 Intel Corporation
+// Copyright (C) 2022-2023 CVAT.ai Corporation
+//
+// SPDX-License-Identifier: MIT
 
+import React, { RefObject } from 'react';
+import { Row, Col } from 'antd/lib/grid';
+import Icon, { DeleteOutlined, PlusCircleOutlined } from '@ant-design/icons';
+import Input from 'antd/lib/input';
+import Button from 'antd/lib/button';
+import Checkbox from 'antd/lib/checkbox';
+import Select from 'antd/lib/select';
+import Form, { FormInstance } from 'antd/lib/form';
+import Badge from 'antd/lib/badge';
+import { Store } from 'antd/lib/form/interface';
+
+import { SerializedAttribute, LabelType } from 'cvat-core-wrapper';
+import CVATTooltip from 'components/common/cvat-tooltip';
+import ColorPicker from 'components/annotation-page/standard-workspace/objects-side-bar/color-picker';
+import { ColorizeIcon } from 'icons';
+import patterns from 'utils/validation-patterns';
+import config from 'config';
 import {
-    Row,
-    Col,
-    Icon,
-    Input,
-    Button,
-    Select,
-    Tooltip,
-    Checkbox,
-} from 'antd';
-
-import Form, { FormComponentProps } from 'antd/lib/form/Form';
-import Text from 'antd/lib/typography/Text';
-
-import {
-    equalArrayHead,
-    idGenerator,
-    Label,
-    Attribute,
+    equalArrayHead, idGenerator, LabelOptColor, SkeletonConfiguration,
 } from './common';
-import patterns from '../../utils/validation-patterns';
 
 export enum AttributeType {
     SELECT = 'SELECT',
@@ -30,435 +32,591 @@ export enum AttributeType {
     NUMBER = 'NUMBER',
 }
 
-type Props = FormComponentProps & {
-    label: Label | null;
-    onSubmit: (label: Label | null) => void;
-};
-
-interface State {
-
+interface Props {
+    label: LabelOptColor | null;
+    labelNames: string[];
+    onSubmit: (label: LabelOptColor) => void;
+    onSkeletonSubmit?: () => SkeletonConfiguration | null;
+    resetSkeleton?: () => void;
+    onCancel: () => void;
 }
 
-class LabelForm extends React.PureComponent<Props, State> {
-    private continueAfterSubmit: boolean;
+export default class LabelForm extends React.Component<Props> {
+    private formRef: RefObject<FormInstance>;
+    private inputNameRef: RefObject<Input>;
 
     constructor(props: Props) {
         super(props);
-
-        this.continueAfterSubmit = false;
+        this.formRef = React.createRef<FormInstance>();
+        this.inputNameRef = React.createRef<Input>();
     }
 
-    private handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        this.props.form.validateFields((error, values) => {
-            if (!error) {
-                this.props.onSubmit({
-                    name: values.labelName,
-                    id: this.props.label ? this.props.label.id : idGenerator(),
-                    attributes: values.keys.map((key: number, index: number) => {
-                        return {
-                            name: values.attrName[key],
-                            type: values.type[key],
-                            mutable: values.mutable[key],
-                            id: this.props.label && index < this.props.label.attributes.length
-                                ? this.props.label.attributes[index].id : key,
-                            values: Array.isArray(values.values[key])
-                                ? values.values[key] : [values.values[key]]
-                        };
-                    }),
-                });
+    private focus = (): void => {
+        this.inputNameRef.current?.focus({
+            cursor: 'end',
+        });
+    };
 
-                this.props.form.resetFields();
+    private handleSubmit = (values: Store): void => {
+        const {
+            label, onSubmit, onSkeletonSubmit, onCancel, resetSkeleton,
+        } = this.props;
 
-                if (!this.continueAfterSubmit) {
-                    this.props.onSubmit(null);
-                }
+        if (!values.name) {
+            onCancel();
+            return;
+        }
+
+        let skeletonConfiguration: SkeletonConfiguration | null = null;
+        if (onSkeletonSubmit) {
+            skeletonConfiguration = onSkeletonSubmit();
+            if (!skeletonConfiguration) {
+                return;
             }
-        });
-    }
+        }
 
-    private addAttribute = () => {
-        const { form } = this.props;
-        const keys = form.getFieldValue('keys');
-        const nextKeys = keys.concat(idGenerator());
-        form.setFieldsValue({
-            keys: nextKeys,
-        });
-    }
+        onSubmit({
+            name: values.name,
+            id: label ? label.id : idGenerator(),
+            color: values.color,
+            type: values.type || label?.type || LabelType.ANY,
+            attributes: (values.attributes || []).map((attribute: Store) => {
+                let attrValues: string | string[] = attribute.values;
+                if (!Array.isArray(attrValues)) {
+                    if (attribute.type === AttributeType.NUMBER) {
+                        attrValues = attrValues.split(';');
+                    } else {
+                        attrValues = [attrValues];
+                    }
+                }
+                attrValues = attrValues.map((value: string) => value.trim());
 
-    private removeAttribute = (key: number) => {
-        const { form } = this.props;
-        const keys = form.getFieldValue('keys');
-        form.setFieldsValue({
-            keys: keys.filter((_key: number) => _key !== key),
+                return {
+                    ...attribute,
+                    values: attrValues,
+                    input_type: attribute.type.toLowerCase(),
+                };
+            }),
+            ...(skeletonConfiguration || {}),
         });
-    }
 
-    private renderAttributeNameInput(key: number, attr: Attribute | null) {
-        const locked = attr ? attr.id >= 0 : false;
+        if (this.formRef.current) {
+            // resetFields does not remove existed attributes
+            this.formRef.current.setFieldsValue({ attributes: undefined });
+            this.formRef.current.resetFields();
+            if (resetSkeleton) {
+                resetSkeleton();
+            }
+
+            if (!label) {
+                this.focus();
+            }
+        }
+    };
+
+    private addAttribute = (): void => {
+        if (this.formRef.current) {
+            const attributes = this.formRef.current.getFieldValue('attributes');
+            this.formRef.current.setFieldsValue({ attributes: [...(attributes || []), { id: idGenerator() }] });
+        }
+    };
+
+    private removeAttribute = (key: number): void => {
+        if (this.formRef.current) {
+            const attributes = this.formRef.current.getFieldValue('attributes');
+            this.formRef.current.setFieldsValue({
+                attributes: attributes.filter((_: any, id: number) => id !== key),
+            });
+        }
+    };
+
+    /* eslint-disable class-methods-use-this */
+    private renderAttributeNameInput(fieldInstance: any, attr: SerializedAttribute | null): JSX.Element {
+        const { key } = fieldInstance;
+        const locked = attr ? attr.id as number >= 0 : false;
         const value = attr ? attr.name : '';
 
         return (
-            <Col span={5}>
-                <Form.Item hasFeedback> {
-                    this.props.form.getFieldDecorator(`attrName[${key}]`, {
-                        initialValue: value,
-                        rules: [{
-                            required: true,
-                            message: 'Please specify a name',
-                        }, {
-                            pattern: patterns.validateAttributeName.pattern,
-                            message: patterns.validateAttributeName.message,
-                        }],
-                    })(<Input disabled={locked} placeholder='Name'/>)
-                } </Form.Item>
-            </Col>
+            <Form.Item
+                hasFeedback
+                name={[key, 'name']}
+                fieldKey={[fieldInstance.fieldKey, 'name']}
+                initialValue={value}
+                rules={[
+                    {
+                        required: true,
+                        message: 'Please specify a name',
+                    },
+                    {
+                        pattern: patterns.validateAttributeName.pattern,
+                        message: patterns.validateAttributeName.message,
+                    },
+                ]}
+            >
+                <Input className='cvat-attribute-name-input' disabled={locked} placeholder='Name' />
+            </Form.Item>
         );
     }
 
-    private renderAttributeTypeInput(key: number, attr: Attribute | null) {
-        const locked = attr ? attr.id >= 0 : false;
-        const type = attr ? attr.type.toUpperCase() : AttributeType.SELECT;
+    private renderAttributeTypeInput(fieldInstance: any, attr: SerializedAttribute | null): JSX.Element {
+        const { key } = fieldInstance;
+        const locked = attr ? attr.id as number >= 0 : false;
+        const type = attr ? attr.input_type.toUpperCase() : AttributeType.SELECT;
 
         return (
-            <Col span={4}>
-                <Form.Item>
-                    <Tooltip overlay='An HTML element representing the attribute'>
-                        {this.props.form.getFieldDecorator(`type[${key}]`, {
-                            initialValue: type,
-                        })(
-                            <Select disabled={locked}>
-                                <Select.Option value={AttributeType.SELECT}> Select </Select.Option>
-                                <Select.Option value={AttributeType.RADIO}> Radio </Select.Option>
-                                <Select.Option value={AttributeType.CHECKBOX}> Checkbox </Select.Option>
-                                <Select.Option value={AttributeType.TEXT}> Text </Select.Option>
-                                <Select.Option value={AttributeType.NUMBER}> Number </Select.Option>
-                            </Select>
-                        )
-                    }</Tooltip>
+            <CVATTooltip title='An HTML element representing the attribute'>
+                <Form.Item name={[key, 'type']} fieldKey={[fieldInstance.fieldKey, 'type']} initialValue={type}>
+                    <Select className='cvat-attribute-type-input' disabled={locked}>
+                        <Select.Option value={AttributeType.SELECT} className='cvat-attribute-type-input-select'>
+                            Select
+                        </Select.Option>
+                        <Select.Option value={AttributeType.RADIO} className='cvat-attribute-type-input-radio'>
+                            Radio
+                        </Select.Option>
+                        <Select.Option value={AttributeType.CHECKBOX} className='cvat-attribute-type-input-checkbox'>
+                            Checkbox
+                        </Select.Option>
+                        <Select.Option value={AttributeType.TEXT} className='cvat-attribute-type-input-text'>
+                            Text
+                        </Select.Option>
+                        <Select.Option value={AttributeType.NUMBER} className='cvat-attribute-type-input-number'>
+                            Number
+                        </Select.Option>
+                    </Select>
                 </Form.Item>
-            </Col>
+            </CVATTooltip>
         );
     }
 
-    private renderAttributeValuesInput(key: number, attr: Attribute | null) {
-        const locked = attr ? attr.id >= 0 : false;
-        const existedValues = attr ? attr.values : [];
+    private renderAttributeValuesInput(fieldInstance: any, attr: SerializedAttribute | null): JSX.Element {
+        const { key } = fieldInstance;
+        const locked = attr ? attr.id as number >= 0 : false;
+        const existingValues = attr ? attr.values : [];
 
-        const validator = (_: any, values: string[], callback: any) => {
-            if (locked && existedValues) {
-                if (!equalArrayHead(existedValues, values)) {
-                    callback('You can only append new values');
+        const validator = (_: any, values: string[]): Promise<void> => {
+            if (locked && existingValues) {
+                if (!equalArrayHead(existingValues, values)) {
+                    return Promise.reject(new Error('You can only append new values'));
                 }
             }
 
             for (const value of values) {
                 if (!patterns.validateAttributeValue.pattern.test(value)) {
-                    callback(`Invalid attribute value: "${value}"`);
+                    return Promise.reject(new Error(`Invalid attribute value: "${value}"`));
                 }
             }
 
-            callback();
-        }
+            return Promise.resolve();
+        };
 
         return (
-            <Form.Item>
-                { this.props.form.getFieldDecorator(`values[${key}]`, {
-                    initialValue: existedValues,
-                    rules: [{
-                        required: true,
-                        message: 'Please specify values',
-                    }, {
-                        validator,
-                    }],
-                })(
+            <CVATTooltip title='Press enter to add a new value'>
+                <Form.Item
+                    name={[key, 'values']}
+                    fieldKey={[fieldInstance.fieldKey, 'values']}
+                    initialValue={existingValues}
+                    rules={[
+                        {
+                            required: true,
+                            message: 'Please specify values',
+                        },
+                        {
+                            validator,
+                        },
+                    ]}
+                >
                     <Select
+                        className='cvat-attribute-values-input'
                         mode='tags'
-                        dropdownMenuStyle={{display: 'none'}}
                         placeholder='Attribute values'
+                        dropdownStyle={{ display: 'none' }}
                     />
-                )}
-            </Form.Item>
+                </Form.Item>
+            </CVATTooltip>
         );
     }
 
-    private renderBooleanValueInput(key: number, attr: Attribute | null) {
-        const value = attr ? attr.values[0] : 'false';
+    private renderBooleanValueInput(fieldInstance: any): JSX.Element {
+        const { key } = fieldInstance;
 
         return (
-            <Form.Item>
-                { this.props.form.getFieldDecorator(`values[${key}]`, {
-                    initialValue: value,
-                })(
-                    <Select>
-                        <Select.Option value='false'> False </Select.Option>
-                        <Select.Option value='true'> True </Select.Option>
+            <CVATTooltip title='Specify a default value'>
+                <Form.Item
+                    rules={[
+                        {
+                            required: true,
+                            message: 'Please, specify a default value',
+                        }]}
+                    name={[key, 'values']}
+                    fieldKey={[fieldInstance.fieldKey, 'values']}
+                >
+                    <Select className='cvat-attribute-values-input'>
+                        <Select.Option value='false'>False</Select.Option>
+                        <Select.Option value='true'>True</Select.Option>
                     </Select>
-                )}
-            </Form.Item>
+                </Form.Item>
+            </CVATTooltip>
         );
     }
 
-    private renderNumberRangeInput(key: number, attr: Attribute | null) {
-        const locked = attr ? attr.id >= 0 : false;
-        const value = attr ? attr.values[0] : '';
+    private renderNumberRangeInput(fieldInstance: any, attr: SerializedAttribute | null): JSX.Element {
+        const { key } = fieldInstance;
+        const locked = attr ? attr.id as number >= 0 : false;
+        const value = attr ? attr.values : '';
 
-        const validator = (_: any, value: string, callback: any) => {
-            const numbers = value.split(';').map((number) => Number.parseFloat(number));
+        const validator = (_: any, strNumbers: string): Promise<void> => {
+            const numbers = strNumbers.split(';').map((number): number => Number.parseFloat(number));
             if (numbers.length !== 3) {
-                callback('Invalid input');
+                return Promise.reject(new Error('Three numbers are expected'));
             }
 
             for (const number of numbers) {
                 if (Number.isNaN(number)) {
-                    callback('Invalid input');
+                    return Promise.reject(new Error(`"${number}" is not a number`));
                 }
             }
 
-            if (numbers[0] >= numbers[1]) {
-                callback('Invalid input');
+            const [min, max, step] = numbers;
+
+            if (min >= max) {
+                return Promise.reject(new Error('Minimum must be less than maximum'));
             }
 
-            if (+numbers[1] - +numbers[0] < +numbers[2]) {
-                callback('Invalid input');
+            if (max - min < step) {
+                return Promise.reject(new Error('Step must be less than minmax difference'));
             }
 
-            callback();
+            if (step <= 0) {
+                return Promise.reject(new Error('Step must be a positive number'));
+            }
+
+            return Promise.resolve();
+        };
+
+        return (
+            <Form.Item
+                name={[key, 'values']}
+                fieldKey={[fieldInstance.fieldKey, 'values']}
+                initialValue={value}
+                rules={[
+                    {
+                        required: true,
+                        message: 'Please set a range',
+                    },
+                    {
+                        validator,
+                    },
+                ]}
+            >
+                <Input className='cvat-attribute-values-input' disabled={locked} placeholder='min;max;step' />
+            </Form.Item>
+        );
+    }
+
+    private renderDefaultValueInput(fieldInstance: any, attr: SerializedAttribute | null): JSX.Element {
+        const { key } = fieldInstance;
+        const value = attr ? attr.values[0] : '';
+
+        if (attr?.input_type.toUpperCase() === 'TEXT') {
+            return (
+                <Form.Item name={[key, 'values']} fieldKey={[fieldInstance.fieldKey, 'values']} initialValue={value}>
+                    <Input.TextArea className='cvat-attribute-values-input' placeholder='Default value' />
+                </Form.Item>
+            );
         }
 
         return (
-            <Form.Item>
-                { this.props.form.getFieldDecorator(`values[${key}]`, {
-                    initialValue: value,
-                    rules: [{
-                        required: true,
-                        message: 'Please set a range',
-                    }, {
-                        validator,
-                    }]
-                })(
-                    <Input disabled={locked} placeholder='min;max;step'/>
-                )}
+            <Form.Item name={[key, 'values']} fieldKey={[fieldInstance.fieldKey, 'values']} initialValue={value}>
+                <Input className='cvat-attribute-values-input' placeholder='Default value' />
             </Form.Item>
         );
     }
 
-    private renderDefaultValueInput(key: number, attr: Attribute | null) {
-        const value = attr ? attr.values[0] : '';
-
-        return (
-            <Form.Item>
-                { this.props.form.getFieldDecorator(`values[${key}]`, {
-                    initialValue: value,
-                })(
-                    <Input placeholder='Default value'/>
-                )}
-            </Form.Item>
-        );
-    }
-
-    private renderMutableAttributeInput(key: number, attr: Attribute | null) {
-        const locked = attr ? attr.id >= 0 : false;
+    private renderMutableAttributeInput(fieldInstance: any, attr: SerializedAttribute | null): JSX.Element {
+        const { key } = fieldInstance;
+        const locked = attr ? attr.id as number >= 0 : false;
         const value = attr ? attr.mutable : false;
 
         return (
-            <Form.Item>
-                <Tooltip overlay='Can this attribute be changed frame to frame?'>
-                    { this.props.form.getFieldDecorator(`mutable[${key}]`, {
-                        initialValue: value,
-                        valuePropName: 'checked',
-                    })(
-                        <Checkbox disabled={locked}> Mutable </Checkbox>
-                    )}
-                </Tooltip>
-            </Form.Item>
+            <CVATTooltip title='Can this attribute be changed frame to frame?'>
+                <Form.Item
+                    name={[key, 'mutable']}
+                    fieldKey={[fieldInstance.fieldKey, 'mutable']}
+                    initialValue={value}
+                    valuePropName='checked'
+                >
+                    <Checkbox className='cvat-attribute-mutable-checkbox' disabled={locked}>
+                        Mutable
+                    </Checkbox>
+                </Form.Item>
+            </CVATTooltip>
         );
     }
 
-    private renderDeleteAttributeButton(key: number, attr: Attribute | null) {
-        const locked = attr ? attr.id >= 0 : false;
+    private renderDeleteAttributeButton(fieldInstance: any, attr: SerializedAttribute | null): JSX.Element {
+        const { key } = fieldInstance;
+        const locked = attr ? attr.id as number >= 0 : false;
 
         return (
-            <Form.Item>
-                <Tooltip overlay='Delete the attribute'>
+            <CVATTooltip title='Delete the attribute'>
+                <Form.Item>
                     <Button
                         type='link'
                         className='cvat-delete-attribute-button'
                         disabled={locked}
-                        onClick={() => {
+                        onClick={(): void => {
                             this.removeAttribute(key);
                         }}
                     >
-                        <Icon type='close-circle'/>
-                    </Button>
-                </Tooltip>
-            </Form.Item>
-        );
-    }
-
-    private renderAttribute = (key: number, index: number) => {
-        const attr = (this.props.label && index < this.props.label.attributes.length
-            ? this.props.label.attributes[index]
-            : null);
-
-        return (
-            <Form.Item key={key}>
-                <Row type='flex' justify='space-between' align='middle'>
-                    { this.renderAttributeNameInput(key, attr) }
-                    { this.renderAttributeTypeInput(key, attr) }
-                    <Col span={6}> {
-                        (() => {
-                            const type = this.props.form.getFieldValue(`type[${key}]`);
-                            let element = null;
-
-                            [AttributeType.SELECT, AttributeType.RADIO]
-                                .includes(type) ?
-                                element = this.renderAttributeValuesInput(key, attr)
-                            : type === AttributeType.CHECKBOX ?
-                                element = this.renderBooleanValueInput(key, attr)
-                            : type === AttributeType.NUMBER ?
-                                element = this.renderNumberRangeInput(key, attr)
-                            :   element = this.renderDefaultValueInput(key, attr)
-
-                            return element;
-                        })()
-                    } </Col>
-                    <Col span={5}>
-                        { this.renderMutableAttributeInput(key, attr) }
-                    </Col>
-                    <Col span={2}>
-                        { this.renderDeleteAttributeButton(key, attr) }
-                    </Col>
-                </Row>
-            </Form.Item>
-        );
-    }
-
-    private renderLabelNameInput() {
-        const value = this.props.label ? this.props.label.name : '';
-        const locked = this.props.label ? this.props.label.id >= 0 : false;
-
-        return (
-            <Col span={10}>
-                <Form.Item hasFeedback> {
-                    this.props.form.getFieldDecorator('labelName', {
-                        initialValue: value,
-                        rules: [{
-                            required: true,
-                            message: 'Please specify a name',
-                        }, {
-                            pattern: patterns.validateAttributeName.pattern,
-                            message: patterns.validateAttributeName.message,
-                        }]
-                    })(<Input disabled={locked} placeholder='Label name'/>)
-                } </Form.Item>
-            </Col>
-        );
-    }
-
-    private renderNewAttributeButton() {
-        return (
-            <Col span={3}>
-                <Form.Item>
-                    <Button type='ghost' onClick={this.addAttribute}>
-                        Add an attribute <Icon type="plus"/>
+                        <DeleteOutlined />
                     </Button>
                 </Form.Item>
-            </Col>
+            </CVATTooltip>
         );
     }
 
-    private renderDoneButton() {
-        return (
-            <Col span={4}>
-                <Tooltip overlay='Save the label and return'>
-                    <Button
-                        style={{width: '150px'}}
-                        type='primary'
-                        htmlType='submit'
-                        onClick={() => {
-                            this.continueAfterSubmit = false;
-                        }}
-                    > Done </Button>
-                </Tooltip>
-            </Col>
-        );
-    }
-
-    private renderContinueButton() {
-        return (
-            this.props.label ? <div/> :
-                <Col span={4}>
-                    <Tooltip overlay='Save the label and create one more'>
-                        <Button
-                            style={{width: '150px'}}
-                            type='primary'
-                            htmlType='submit'
-                            onClick={() => {
-                                this.continueAfterSubmit = true;
-                            }}
-                        > Continue </Button>
-                    </Tooltip>
-                </Col>
-            );
-    }
-
-    private renderCancelButton() {
-        return (
-            <Col span={4}>
-                <Tooltip overlay='Do not save the label and return'>
-                    <Button
-                        style={{width: '150px'}}
-                        type='danger'
-                        onClick={() => {
-                            this.props.onSubmit(null);
-                        }}
-                    > Cancel </Button>
-                </Tooltip>
-            </Col>
-        );
-    }
-
-    public render() {
-        this.props.form.getFieldDecorator('keys', {
-            initialValue: this.props.label
-                ? this.props.label.attributes.map((attr: Attribute) => attr.id)
-                : []
-        });
-
-        let keys = this.props.form.getFieldValue('keys');
-        const attributeItems = keys.map(this.renderAttribute);
+    private renderAttribute = (fieldInstance: any): JSX.Element => {
+        const { label } = this.props;
+        const { key } = fieldInstance;
+        const fieldValue = this.formRef.current?.getFieldValue('attributes')[key];
+        const attr = label ? label.attributes.filter((_attr: any): boolean => _attr.id === fieldValue.id)[0] : null;
 
         return (
-            <Form onSubmit={this.handleSubmit}>
-                <Row type='flex' justify='start' align='middle'>
-                    { this.renderLabelNameInput() }
-                    <Col span={1}/>
-                    { this.renderNewAttributeButton() }
-                </Row>
-                { attributeItems.length > 0 ?
-                    <Row type='flex' justify='start' align='middle'>
-                        <Col>
-                            <Text> Attributes </Text>
+            <Form.Item noStyle key={key} shouldUpdate>
+                {() => (
+                    <Row
+                        justify='space-between'
+                        align='top'
+                        cvat-attribute-id={fieldValue.id}
+                        className='cvat-attribute-inputs-wrapper'
+                    >
+                        <Col span={5}>{this.renderAttributeNameInput(fieldInstance, attr)}</Col>
+                        <Col span={4}>{this.renderAttributeTypeInput(fieldInstance, attr)}</Col>
+                        <Col span={6}>
+                            {((): JSX.Element => {
+                                const currentFieldValue = this.formRef.current?.getFieldValue('attributes')[key];
+                                const type = currentFieldValue.type || AttributeType.SELECT;
+                                let element = null;
+                                if ([AttributeType.SELECT, AttributeType.RADIO].includes(type)) {
+                                    element = this.renderAttributeValuesInput(fieldInstance, attr);
+                                } else if (type === AttributeType.CHECKBOX) {
+                                    element = this.renderBooleanValueInput(fieldInstance);
+                                } else if (type === AttributeType.NUMBER) {
+                                    element = this.renderNumberRangeInput(fieldInstance, attr);
+                                } else {
+                                    element = this.renderDefaultValueInput(fieldInstance, attr);
+                                }
+
+                                return element;
+                            })()}
                         </Col>
-                    </Row> : null
-                }
-                { attributeItems.reverse() }
-                <Row type='flex' justify='start' align='middle'>
-                    { this.renderDoneButton() }
-                    <Col span={1}/>
-                    { this.renderContinueButton() }
-                    <Col span={1}/>
-                    { this.renderCancelButton() }
+                        <Col span={5}>{this.renderMutableAttributeInput(fieldInstance, attr)}</Col>
+                        <Col span={2}>{this.renderDeleteAttributeButton(fieldInstance, attr)}</Col>
+                    </Row>
+                )}
+            </Form.Item>
+        );
+    };
+
+    private renderLabelNameInput(): JSX.Element {
+        const { label, labelNames, onCancel } = this.props;
+        const value = label ? label.name : '';
+
+        return (
+            <Form.Item
+                hasFeedback
+                name='name'
+                initialValue={value}
+                rules={[
+                    {
+                        required: !!label,
+                        message: 'Please specify a name',
+                    },
+                    {
+                        pattern: patterns.validateAttributeName.pattern,
+                        message: patterns.validateAttributeName.message,
+                    },
+                    {
+                        validator: (_rule: any, labelName: string) => {
+                            if (labelNames.includes(labelName) && label?.name !== labelName) {
+                                return Promise.reject(new Error('Label name must be unique for the task'));
+                            }
+                            return Promise.resolve();
+                        },
+                    },
+                ]}
+            >
+                <Input
+                    ref={this.inputNameRef}
+                    placeholder='Label name'
+                    className='cvat-label-name-input'
+                    onKeyUp={(event): void => {
+                        if (event.key === 'Escape' || event.key === 'Esc' || event.keyCode === 27) {
+                            onCancel();
+                        }
+                    }}
+                    autoComplete='off'
+                />
+            </Form.Item>
+        );
+    }
+
+    private renderLabelTypeInput(): JSX.Element {
+        const { onSkeletonSubmit } = this.props;
+        const isSkeleton = !!onSkeletonSubmit;
+
+        const types = Object.values(LabelType)
+            .filter((type: string) => type !== LabelType.SKELETON);
+        const { label } = this.props;
+        const locked = !!label?.has_parent;
+        const defaultType = isSkeleton ? LabelType.SKELETON : LabelType.ANY;
+        const value = label ? label.type : defaultType;
+
+        return (
+            <Form.Item name='type' initialValue={value}>
+                <Select className='cvat-label-type-input' disabled={isSkeleton || locked} showSearch={false}>
+                    {isSkeleton && (
+                        <Select.Option
+                            className='cvat-label-type-option-skeleton'
+                            value='skeleton'
+                        >
+                            Skeleton
+                        </Select.Option>
+                    )}
+                    { types.map((type: string): JSX.Element => (
+                        <Select.Option className={`cvat-label-type-option-${type}`} key={type} value={type}>
+                            {`${type[0].toUpperCase()}${type.slice(1)}`}
+                        </Select.Option>
+                    )) }
+                </Select>
+            </Form.Item>
+        );
+    }
+
+    private renderNewAttributeButton(): JSX.Element {
+        return (
+            <Form.Item>
+                <Button type='ghost' onClick={this.addAttribute} className='cvat-new-attribute-button'>
+                    Add an attribute
+                    <PlusCircleOutlined />
+                </Button>
+            </Form.Item>
+        );
+    }
+
+    private renderSaveButton(): JSX.Element {
+        const { label } = this.props;
+        const tooltipTitle = label ? 'Save the label and return' : 'Save the label and create one more';
+        const buttonText = label ? 'Done' : 'Continue';
+
+        return (
+            <CVATTooltip title={tooltipTitle}>
+                <Button
+                    className='cvat-submit-new-label-button'
+                    style={{ width: '150px' }}
+                    type='primary'
+                    htmlType='submit'
+                >
+                    {buttonText}
+                </Button>
+            </CVATTooltip>
+        );
+    }
+
+    private renderCancelButton(): JSX.Element {
+        const { onCancel } = this.props;
+
+        return (
+            <CVATTooltip title='Do not save the label and return'>
+                <Button
+                    className='cvat-cancel-new-label-button'
+                    type='primary'
+                    danger
+                    style={{ width: '150px' }}
+                    onClick={(): void => {
+                        onCancel();
+                    }}
+                >
+                    Cancel
+                </Button>
+            </CVATTooltip>
+        );
+    }
+
+    private renderChangeColorButton(): JSX.Element {
+        const { label } = this.props;
+
+        return (
+            <Form.Item noStyle shouldUpdate>
+                {() => (
+                    <Form.Item name='color' initialValue={label ? label?.color : undefined}>
+                        <ColorPicker placement='bottom'>
+                            <CVATTooltip title='Change color of the label'>
+                                <Button type='default' className='cvat-change-task-label-color-button'>
+                                    <Badge
+                                        className='cvat-change-task-label-color-badge'
+                                        color={this.formRef.current?.getFieldValue('color') || config.NEW_LABEL_COLOR}
+                                        text={<Icon component={ColorizeIcon} />}
+                                    />
+                                </Button>
+                            </CVATTooltip>
+                        </ColorPicker>
+                    </Form.Item>
+                )}
+            </Form.Item>
+        );
+    }
+
+    private renderAttributes() {
+        return (fieldInstances: any[]): JSX.Element[] => fieldInstances.map(this.renderAttribute);
+    }
+
+    // eslint-disable-next-line react/sort-comp
+    public componentDidMount(): void {
+        const { label } = this.props;
+        if (this.formRef.current && label && label.attributes.length) {
+            const convertedAttributes = label.attributes.map(
+                (attribute: SerializedAttribute): Store => ({
+                    ...attribute,
+                    values:
+                        attribute.input_type.toUpperCase() === 'NUMBER' ? attribute.values.join(';') : attribute.values,
+                    type: attribute.input_type.toUpperCase(),
+                }),
+            );
+
+            for (const attr of convertedAttributes) {
+                delete attr.input_type;
+            }
+
+            this.formRef.current.setFieldsValue({ attributes: convertedAttributes });
+        }
+
+        this.focus();
+    }
+
+    public render(): JSX.Element {
+        return (
+            <Form onFinish={this.handleSubmit} layout='vertical' ref={this.formRef}>
+                <Row justify='start' align='top'>
+                    <Col span={8}>{this.renderLabelNameInput()}</Col>
+                    <Col span={3} offset={1}>{this.renderLabelTypeInput()}</Col>
+                    <Col span={3} offset={1}>
+                        {this.renderChangeColorButton()}
+                    </Col>
+                    <Col offset={1}>
+                        {this.renderNewAttributeButton()}
+                    </Col>
+                </Row>
+                <Row justify='start' align='top'>
+                    <Col span={24}>
+                        <Form.List name='attributes'>{this.renderAttributes()}</Form.List>
+                    </Col>
+                </Row>
+                <Row justify='start' align='middle'>
+                    <Col>{this.renderSaveButton()}</Col>
+                    <Col offset={1}>{this.renderCancelButton()}</Col>
                 </Row>
             </Form>
         );
     }
 }
-
-export default Form.create<Props>()(LabelForm);
-
-
-// add validators
-// add initial values
-// add readonly fields

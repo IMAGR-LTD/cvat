@@ -1,39 +1,32 @@
-import React from 'react';
+// Copyright (C) 2020-2022 Intel Corporation
+//
+// SPDX-License-Identifier: MIT
+
 import { connect } from 'react-redux';
-import { loginAsync } from '../../actions/auth-actions';
-import { CombinedState } from '../../reducers/root-reducer';
-import LoginPageComponent from '../../components/login-page/login-page';
+import LoginPageComponent from 'components/login-page/login-page';
+import { CombinedState } from 'reducers';
+import { loginAsync } from 'actions/auth-actions';
 
 interface StateToProps {
-    loginError: any;
+    fetching: boolean;
+    renderResetPassword: boolean;
+    hasEmailVerificationBeenSent: boolean;
 }
 
 interface DispatchToProps {
-    login(username: string, password: string): void;
+    onLogin: typeof loginAsync;
 }
 
 function mapStateToProps(state: CombinedState): StateToProps {
     return {
-        loginError: state.auth.loginError,
+        fetching: state.auth.fetching,
+        renderResetPassword: state.auth.allowResetPassword,
+        hasEmailVerificationBeenSent: state.auth.hasEmailVerificationBeenSent,
     };
 }
 
-function mapDispatchToProps(dispatch: any): DispatchToProps {
-    return {
-        login: (...args) => dispatch(loginAsync(...args)),
-    };
-}
+const mapDispatchToProps: DispatchToProps = {
+    onLogin: loginAsync,
+};
 
-function LoginPageContainer(props: StateToProps & DispatchToProps) {
-    return (
-        <LoginPageComponent
-            onLogin={props.login}
-            loginError={props.loginError ? props.loginError.toString() : ''}
-        />
-    );
-}
-
-export default connect(
-    mapStateToProps,
-    mapDispatchToProps,
-)(LoginPageContainer);
+export default connect(mapStateToProps, mapDispatchToProps)(LoginPageComponent);

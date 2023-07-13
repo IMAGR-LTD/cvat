@@ -1,27 +1,43 @@
 {
-    "python.pythonPath": ".env/bin/python",
-    "eslint.enable": true,
-    "eslint.validate": [
+    "eslint.probe": [
         "javascript",
-        "typescript"
+        "typescript",
+        "typescriptreact"
     ],
+    "eslint.onIgnoredFiles": "warn",
     "eslint.workingDirectories": [
         {
-            "directory":  "./cvat-core",
-            "changeProcessCWD": true
+            "directory": "${cwd}",
         },
         {
-            "directory":  "./cvat-canvas",
-            "changeProcessCWD": true
+            "pattern":  "cvat-*"
         },
         {
-            "directory":  "./cvat-ui",
-            "changeProcessCWD": true
-        },
-        {
-            "directory":  ".",
-            "changeProcessCWD": true
+            "directory": "tests",
+            "!cwd": true
         }
     ],
-    "python.linting.pylintEnabled": true
+    "npm.exclude": "**/.env/**",
+    "licenser.license": "Custom",
+    "licenser.customHeader": "Copyright (C) @YEAR@ CVAT.ai Corporation\n\nSPDX-License-Identifier: MIT",
+    "files.trimTrailingWhitespace": true,
+    "sqltools.connections": [
+        {
+            "previewLimit": 50,
+            "driver": "SQLite",
+            "name": "cvat",
+            "database": "${workspaceFolder:cvat}/db.sqlite3"
+        }
+    ],
+    "python.defaultInterpreterPath": "${workspaceFolder}/.env/",
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": true,
+    "python.linting.pycodestyleEnabled": false,
+    "python.testing.pytestArgs": [
+        "--rootdir","${workspaceFolder}/tests/"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+    "python.testing.pytestPath": "${workspaceFolder}/.env/bin/pytest",
+    "python.testing.cwd": "${workspaceFolder}/tests"
 }

@@ -1,40 +1,32 @@
-/*
- * Copyright (C) 2019 Intel Corporation
- * SPDX-License-Identifier: MIT
-*/
+// Copyright (C) 2020-2022 Intel Corporation
+//
+// SPDX-License-Identifier: MIT
+
+const globalConfig = require('../.eslintrc.js');
 
 module.exports = {
-    'env': {
-        'node': true,
-        'browser': true,
-        'es6': true,
+    parserOptions: {
+        project: './tsconfig.json',
+        tsconfigRootDir: __dirname,
     },
-    'parserOptions': {
-        'parser': '@typescript-eslint/parser',
-        'ecmaVersion': 6,
-    },
-    'plugins': [
-        '@typescript-eslint',
-        'import',
+    ignorePatterns: [
+        '.eslintrc.js',
+        'webpack.config.js',
+        'node_modules/**',
+        'dist/**',
     ],
-    'extends': [
-        'plugin:@typescript-eslint/recommended',
-        'airbnb-typescript/base',
-        'plugin:import/errors',
-        'plugin:import/warnings',
-        'plugin:import/typescript',
-    ],
-    'rules': {
-        '@typescript-eslint/indent': ['warn', 4],
-        '@typescript-eslint/no-explicit-any': [0],
-        'no-restricted-syntax': [0, {'selector': 'ForOfStatement'}],
-        'no-plusplus': [0],
-    },
-    'settings': {
-        'import/resolver': {
-            'node': {
-                'extensions': ['.tsx', '.ts', '.jsx', '.js', '.json'],
-            },
-        },
+    extends: ['airbnb-typescript'],
+    rules: {
+        ...globalConfig.rules, // need to import rules again because they've been redefined by "airbnb-typescript"
+
+        'react/no-did-update-set-state': 0, // https://github.com/airbnb/javascript/issues/1875
+        'react/require-default-props': 'off',
+        'react/no-unused-prop-types': 'off',
+        'react/no-array-index-key': 'off',
+        'react/static-property-placement': ['error', 'static public field'],
+        'react/jsx-indent': ['warn', 4],
+        'react/jsx-indent-props': ['warn', 4],
+        'react/jsx-props-no-spreading': 0,
+        'jsx-quotes': ['error', 'prefer-single'],
     },
 };

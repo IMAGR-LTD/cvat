@@ -1,53 +1,73 @@
-/*
- * Copyright (C) 2018 Intel Corporation
- *
- * SPDX-License-Identifier: MIT
- */
+// Copyright (C) 2018-2022 Intel Corporation
+//
+// SPDX-License-Identifier: MIT
 
- module.exports = {
-    "env": {
-        "node": false,
-        "browser": true,
-        "es6": true,
-        "jquery": true,
-        "qunit": true,
+module.exports = {
+    root: true,
+    env: {
+        node: true,
+        browser: true,
+        es2020: true,
     },
-    "parserOptions": {
-        "sourceType": "script",
+    parserOptions: {
+        sourceType: 'module',
+        parser: '@typescript-eslint/parser',
     },
-    "plugins": [
-        "security",
-        "no-unsanitized",
-        "no-unsafe-innerhtml",
+    ignorePatterns: [
+        '.eslintrc.js',
+        'lint-staged.config.js',
+        'site/themes/**',
     ],
-    "extends": [
-        "eslint:recommended",
-        "plugin:security/recommended",
-        "plugin:no-unsanitized/DOM",
-        "airbnb-base",
+    plugins: ['@typescript-eslint', 'security', 'no-unsanitized', 'import'],
+    extends: [
+        'eslint:recommended', 'plugin:security/recommended', 'plugin:no-unsanitized/DOM',
+        'airbnb-base', 'plugin:import/errors', 'plugin:import/warnings',
+        'plugin:import/typescript', 'plugin:@typescript-eslint/recommended', 'airbnb-typescript/base',
     ],
-    "rules": {
-        "no-await-in-loop": [0],
-        "global-require": [0],
-        "no-new": [0],
-        "class-methods-use-this": [0],
-        "no-restricted-properties": [0, {
-            "object": "Math",
-            "property": "pow",
-        }],
-        "no-param-reassign": [0],
-        "no-underscore-dangle": ["error", { "allowAfterThis": true }],
-        "no-restricted-syntax": [0, {"selector": "ForOfStatement"}],
-        "no-continue": [0],
-        "no-unsafe-innerhtml/no-unsafe-innerhtml": 1,
-        // This rule actual for user input data on the node.js environment mainly.
-        "security/detect-object-injection": 0,
-        "indent": ["warn", 4],
-        // recently added to airbnb
-        "max-classes-per-file": [0],
-        // it was opposite before and our code has been written according to previous rule
-        "arrow-parens": [0],
-        // object spread is a modern ECMA standard. Let's do not use it without babel
-        "prefer-object-spread": [0],
+    rules: {
+        // 'header/header': [2, 'line', [{
+        //     pattern: ' {1}Copyright \\(C\\) (?:20\\d{2}-)?2022 Intel Corporation',
+        //     template: ' Copyright (C) 2022 Intel Corporation'
+        // }, '', ' SPDX-License-Identifier: MIT']],
+        'no-plusplus': 0,
+        'no-continue': 0,
+        'no-console': 0,
+        'no-param-reassign': ['error', { 'props': false }],
+        'no-restricted-syntax': [0, { selector: 'ForOfStatement' }],
+        'no-await-in-loop': 0,
+        'indent': ['error', 4, { 'SwitchCase': 1 }],
+        'max-len': ['error', { code: 120, ignoreStrings: true }],
+        'func-names': 0,
+        'valid-typeof': 0,
+        'no-useless-constructor': 0, // sometimes constructor is necessary to generate right documentation in cvat-core
+        'quotes': ['error', 'single', { "avoidEscape": true }],
+        'lines-between-class-members': 0,
+        'class-methods-use-this': 0,
+        'no-underscore-dangle': ['error', { allowAfterThis: true }],
+        'max-classes-per-file': 0,
+        'operator-linebreak': ['error', 'after'],
+        'newline-per-chained-call': 0,
+        'global-require': 0,
+        'arrow-parens': ['error', 'always'],
+        'security/detect-object-injection': 0, // the rule is relevant for user input data on the node.js environment
+        'import/order': ['error', {'groups': ['builtin', 'external', 'internal']}],
+        'import/prefer-default-export': 0, // works incorrect with interfaces
+
+        '@typescript-eslint/ban-ts-comment': 0,
+        '@typescript-eslint/no-explicit-any': 0,
+        '@typescript-eslint/indent': ['error', 4],
+        '@typescript-eslint/lines-between-class-members': 0,
+        '@typescript-eslint/explicit-function-return-type': ['warn', { allowExpressions: true }],
+        '@typescript-eslint/explicit-module-boundary-types': 'off',
+        '@typescript-eslint/ban-types': [
+            'error',
+            {
+                types: {
+                    '{}': false, // TODO: try to fix with Record<string, unknown>
+                    object: false, // TODO: try to fix with Record<string, unknown>
+                    Function: false, // TODO: try to fix somehow
+                },
+            },
+        ],
     },
 };

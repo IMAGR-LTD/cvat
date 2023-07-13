@@ -1,64 +1,56 @@
+// Copyright (C) 2020-2022 Intel Corporation
+// Copyright (C) 2022 CVAT.ai Corp
+//
+// SPDX-License-Identifier: MIT
+
 import React from 'react';
-
 import { RouteComponentProps } from 'react-router';
-import { Link, withRouter } from 'react-router-dom';
+import { withRouter } from 'react-router-dom';
+import { Row, Col } from 'antd/lib/grid';
 
-import Title from 'antd/lib/typography/Title';
-import Text from 'antd/lib/typography/Text';
-import {
-    Col,
-    Row,
-    Modal,
-} from 'antd';
-
-import RegisterForm, { RegisterData } from '../../components/register-page/register-form';
+import { UserAgreement } from 'reducers';
+import SigningLayout, { formSizes } from 'components/signing-common/signing-layout';
+import RegisterForm, { RegisterData, UserConfirmation } from './register-form';
 
 interface RegisterPageComponentProps {
-    registerError: string;
-    onRegister: (username: string, firstName: string,
-        lastName: string, email: string,
-        password1: string, password2: string) => void;
+    fetching: boolean;
+    userAgreements: UserAgreement[];
+    onRegister: (
+        username: string,
+        firstName: string,
+        lastName: string,
+        email: string,
+        password: string,
+        confirmations: UserConfirmation[],
+    ) => void;
 }
 
-function RegisterPageComponent(props: RegisterPageComponentProps & RouteComponentProps) {
-    const sizes = {
-        xs: { span: 14 },
-        sm: { span: 14 },
-        md: { span: 10 },
-        lg: { span: 4 },
-        xl: { span: 4 },
-    }
-
-    if (props.registerError) {
-        Modal.error({
-            title: 'Could not register',
-            content: props.registerError,
-        });
-    }
+function RegisterPageComponent(props: RegisterPageComponentProps & RouteComponentProps): JSX.Element {
+    const { fetching, userAgreements, onRegister } = props;
 
     return (
-        <Row type='flex' justify='center' align='middle'>
-            <Col {...sizes}>
-                <Title level={2}> Create an account </Title>
-                <RegisterForm onSubmit={(registerData: RegisterData) => {
-                    props.onRegister(
-                        registerData.username,
-                        registerData.firstName,
-                        registerData.lastName,
-                        registerData.email,
-                        registerData.password1,
-                        registerData.password2,
-                    );
-                }}/>
-                <Row type='flex' justify='start' align='top'>
-                    <Col>
-                        <Text strong>
-                            Already have an account? <Link to="/auth/login"> Login </Link>
-                        </Text>
+        <SigningLayout>
+            <Col {...formSizes.wrapper}>
+                <Row justify='center'>
+                    <Col {...formSizes.form}>
+                        <RegisterForm
+                            fetching={fetching}
+                            userAgreements={userAgreements}
+                            onSubmit={(registerData: RegisterData): void => {
+                                onRegister(
+                                    registerData.username,
+                                    registerData.firstName,
+                                    registerData.lastName,
+                                    registerData.email,
+                                    registerData.password,
+                                    registerData.confirmations,
+                                );
+                            }}
+                        />
                     </Col>
                 </Row>
             </Col>
-        </Row>
+        </SigningLayout>
     );
 }
 

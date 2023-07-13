@@ -1,59 +1,48 @@
-import React from 'react';
+// Copyright (C) 2020-2022 Intel Corporation
+//
+// SPDX-License-Identifier: MIT
 
-import {
-    Icon,
-    Button,
-} from 'antd';
+import React from 'react';
+import { PlusCircleOutlined } from '@ant-design/icons';
+import Button from 'antd/lib/button';
 
 import ConstructorViewerItem from './constructor-viewer-item';
-import { Label } from './common';
+import { LabelOptColor } from './common';
 
 interface ConstructorViewerProps {
-    labels: Label[];
-    onUpdate: (label: Label) => void;
-    onDelete: (label: Label) => void;
-    onCreate: () => void;
+    labels: LabelOptColor[];
+    onUpdate: (label: LabelOptColor) => void;
+    onDelete: (label: LabelOptColor) => void;
+    onCreate: (creatorType: 'basic' | 'skeleton') => void;
 }
 
-const colors = [
-    '#ff811e', '#9013fe', '#0074d9',
-    '#549ca4', '#e8c720', '#3d9970',
-    '#6b2034', '#2c344c', '#2ecc40',
-];
-
-let currentColor = 0;
-
-function nextColor() {
-    const color = colors[currentColor];
-    currentColor += 1;
-    if (currentColor >= colors.length) {
-        currentColor = 0;
-    }
-    return color;
-}
-
-export default function ConstructorViewer(props: ConstructorViewerProps) {
-    currentColor = 0;
-
+function ConstructorViewer(props: ConstructorViewerProps): JSX.Element {
+    const {
+        onCreate, onUpdate, onDelete, labels,
+    } = props;
     const list = [
-        <Button key='create' type='ghost' onClick={props.onCreate} className='cvat-constructor-viewer-new-item'>
-            Add label <Icon type='plus-circle'/>
-        </Button>];
-    for (const label of props.labels) {
+        <Button key='create' type='ghost' onClick={() => onCreate('basic')} className='cvat-constructor-viewer-new-item'>
+            Add label
+            <PlusCircleOutlined />
+        </Button>,
+        <Button key='create_skeleton' type='ghost' onClick={() => onCreate('skeleton')} className='cvat-constructor-viewer-new-skeleton-item'>
+            Setup skeleton
+            <PlusCircleOutlined />
+        </Button>,
+    ];
+    for (const label of labels) {
         list.push(
             <ConstructorViewerItem
-                onUpdate={props.onUpdate}
-                onDelete={props.onDelete}
+                onUpdate={onUpdate}
+                onDelete={onDelete}
                 label={label}
                 key={label.id}
-                color={nextColor()}
-            />
-        )
+                color={label.color}
+            />,
+        );
     }
 
-    return (
-        <div className='cvat-constructor-viewer'>
-            { list }
-        </div>
-    );
+    return <div className='cvat-constructor-viewer'>{list}</div>;
 }
+
+export default React.memo(ConstructorViewer);

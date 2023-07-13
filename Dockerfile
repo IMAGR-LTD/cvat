@@ -1,10 +1,94 @@
-FROM ubuntu:16.04
+ARG PIP_VERSION=22.0.2
+ARG BASE_IMAGE=ubuntu:22.04
+
+FROM ${BASE_IMAGE} as build-image-base
+
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get --no-install-recommends install -yq \
+        curl \
+        g++ \
+        gcc \
+        git \
+        libgeos-dev \
+        libldap2-dev \
+        libsasl2-dev \
+        make \
+        nasm \
+        pkg-config \
+        python3-dev \
+        python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG PIP_VERSION
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+RUN --mount=type=cache,target=/root/.cache/pip/http \
+    python3 -m pip install -U pip==${PIP_VERSION}
+
+# We build OpenH264, FFmpeg and PyAV in a separate build stage,
+# because this way Docker can do it in parallel to all the other packages.
+FROM build-image-base AS build-image-av
+
+# Compile Openh264 and FFmpeg
+ARG PREFIX=/opt/ffmpeg
+ARG PKG_CONFIG_PATH=${PREFIX}/lib/pkgconfig
+
+ENV FFMPEG_VERSION=4.3.1 \
+    OPENH264_VERSION=2.1.1
+
+WORKDIR /tmp/openh264
+RUN curl -sL https://github.com/cisco/openh264/archive/v${OPENH264_VERSION}.tar.gz --output - | \
+    tar -zx --strip-components=1 && \
+    make -j5 && make install-shared PREFIX=${PREFIX} && make clean
+
+WORKDIR /tmp/ffmpeg
+RUN curl -sL https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.gz --output - | \
+    tar -zx --strip-components=1 && \
+    ./configure --disable-nonfree --disable-gpl --enable-libopenh264 \
+        --enable-shared --disable-static --disable-doc --disable-programs --prefix="${PREFIX}" && \
+    make -j5 && make install && make clean
+
+COPY utils/dataset_manifest/requirements.txt /tmp/utils/dataset_manifest/requirements.txt
+
+# Since we're using pip-compile-multi, each dependency can only be listed in
+# one requirements file. In the case of PyAV, that should be
+# `dataset_manifest/requirements.txt`. Make sure it's actually there,
+# and then remove everything else.
+RUN grep -q '^av==' /tmp/utils/dataset_manifest/requirements.txt
+RUN sed -i '/^av==/!d' /tmp/utils/dataset_manifest/requirements.txt
+
+RUN --mount=type=cache,target=/root/.cache/pip/http \
+    python3 -m pip wheel \
+    -r /tmp/utils/dataset_manifest/requirements.txt \
+    -w /tmp/wheelhouse
+
+# This stage builds wheels for all dependencies (except PyAV)
+FROM build-image-base AS build-image
+
+COPY cvat/requirements/ /tmp/cvat/requirements/
+COPY utils/dataset_manifest/requirements.txt /tmp/utils/dataset_manifest/requirements.txt
+
+# Exclude av from the requirements file
+RUN sed -i '/^av==/d' /tmp/utils/dataset_manifest/requirements.txt
+
+ARG DJANGO_CONFIGURATION="production"
+
+RUN --mount=type=cache,target=/root/.cache/pip/http \
+    DATUMARO_HEADLESS=1 python3 -m pip wheel --no-deps \
+    -r /tmp/cvat/requirements/${DJANGO_CONFIGURATION}.txt \
+    -w /tmp/wheelhouse
+
+FROM golang:1.20.5 AS build-smokescreen
+
+RUN git clone --depth=1 -b v0.0.4 https://github.com/stripe/smokescreen.git
+RUN cd smokescreen && go build -o /tmp/smokescreen
+
+FROM ${BASE_IMAGE}
 
 ARG http_proxy
 ARG https_proxy
-ARG no_proxy
+ARG no_proxy="nuclio,${no_proxy}"
 ARG socks_proxy
-ARG TZ
+ARG TZ="Etc/UTC"
 
 ENV TERM=xterm \
     http_proxy=${http_proxy}   \
@@ -15,155 +99,105 @@ ENV TERM=xterm \
     LC_ALL='C.UTF-8' \
     TZ=${TZ}
 
-ARG USER
-ARG DJANGO_CONFIGURATION
+ARG USER="django"
+ARG DJANGO_CONFIGURATION="production"
 ENV DJANGO_CONFIGURATION=${DJANGO_CONFIGURATION}
 
 # Install necessary apt packages
 RUN apt-get update && \
-    apt-get install -yq \
-        python-software-properties \
-        software-properties-common \
-        wget && \
-    add-apt-repository ppa:mc3man/xerus-media -y && \
-    add-apt-repository ppa:mc3man/gstffmpeg-keep -y && \
-    apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -yq \
-        apache2 \
-        apache2-dev \
-        libapache2-mod-xsendfile \
-        supervisor \
-        ffmpeg \
-        gstreamer0.10-ffmpeg \
-        libldap2-dev \
-        libsasl2-dev \
-        python3-dev \
-        python3-pip \
-        tzdata \
-        unzip \
-        unrar \
+    DEBIAN_FRONTEND=noninteractive apt-get --no-install-recommends install -yq \
+        bzip2 \
+        ca-certificates \
+        curl \
+        git \
+        git-lfs \
+        libgeos-c1v5 \
+        libgl1 \
+        libgomp1 \
+        libldap-2.5-0 \
+        libpython3.10 \
+        libsasl2-2 \
+        nginx \
         p7zip-full \
-        vim \
-        git-core \
-        libsm6 \
-        libxext6 && \
-    pip3 install -U setuptools && \
-    ln -fs /usr/share/zoneinfo/${TZ} /etc/localtime && \
+        poppler-utils \
+        python3 \
+        python3-distutils \
+        python3-venv \
+        ssh \
+        supervisor \
+        tzdata \
+    && ln -fs /usr/share/zoneinfo/${TZ} /etc/localtime && \
     dpkg-reconfigure -f noninteractive tzdata && \
-    add-apt-repository --remove ppa:mc3man/gstffmpeg-keep -y && \
-    add-apt-repository --remove ppa:mc3man/xerus-media -y && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    echo 'application/wasm wasm' >> /etc/mime.types
+
+# Install smokescreen
+COPY --from=build-smokescreen /tmp/smokescreen /usr/local/bin/smokescreen
 
 # Add a non-root user
 ENV USER=${USER}
 ENV HOME /home/${USER}
-WORKDIR ${HOME}
-RUN adduser --shell /bin/bash --disabled-password --gecos "" ${USER}
-
-COPY components /tmp/components
-
-# OpenVINO toolkit support
-ARG OPENVINO_TOOLKIT
-ENV OPENVINO_TOOLKIT=${OPENVINO_TOOLKIT}
-ENV REID_MODEL_DIR=${HOME}/reid
-RUN if [ "$OPENVINO_TOOLKIT" = "yes" ]; then \
-        /tmp/components/openvino/install.sh && \
-        mkdir ${REID_MODEL_DIR} && \
-        wget https://download.01.org/openvinotoolkit/2018_R5/open_model_zoo/person-reidentification-retail-0079/FP32/person-reidentification-retail-0079.xml -O reid/reid.xml && \
-        wget https://download.01.org/openvinotoolkit/2018_R5/open_model_zoo/person-reidentification-retail-0079/FP32/person-reidentification-retail-0079.bin -O reid/reid.bin; \
-    fi
-
-# Tensorflow annotation support
-ARG TF_ANNOTATION
-ENV TF_ANNOTATION=${TF_ANNOTATION}
-ENV TF_ANNOTATION_MODEL_PATH=${HOME}/rcnn/inference_graph
-RUN if [ "$TF_ANNOTATION" = "yes" ]; then \
-        bash -i /tmp/components/tf_annotation/install.sh; \
-    fi
-
-# Auto segmentation support. by Mohammad
-ARG AUTO_SEGMENTATION
-ENV AUTO_SEGMENTATION=${AUTO_SEGMENTATION}
-ENV AUTO_SEGMENTATION_PATH=${HOME}/Mask_RCNN
-RUN if [ "$AUTO_SEGMENTATION" = "yes" ]; then \
-    bash -i /tmp/components/auto_segmentation/install.sh; \
-    fi
-
-ARG WITH_TESTS
-RUN if [ "$WITH_TESTS" = "yes" ]; then \
-        wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - && \
-        echo 'deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main' | tee /etc/apt/sources.list.d/google-chrome.list && \
-        wget -qO- https://deb.nodesource.com/setup_9.x | bash - && \
-        apt-get update && \
-        DEBIAN_FRONTEND=noninteractive apt-get install -yq \
-            google-chrome-stable \
-            nodejs && \
-        rm -rf /var/lib/apt/lists/*; \
-        mkdir tests && cd tests && npm install \
-            eslint \
-            eslint-detailed-reporter \
-            karma \
-            karma-chrome-launcher \
-            karma-coveralls \
-            karma-coverage \
-            karma-junit-reporter \
-            karma-qunit \
-            qunit; \
-        echo "export PATH=~/tests/node_modules/.bin:${PATH}" >> ~/.bashrc; \
-    fi
-
-# Install and initialize CVAT, copy all necessary files
-COPY cvat/requirements/ /tmp/requirements/
-COPY supervisord.conf mod_wsgi.conf wait-for-it.sh manage.py ${HOME}/
-RUN pip3 install --no-cache-dir -r /tmp/requirements/${DJANGO_CONFIGURATION}.txt
-# pycocotools package is impossible to install with its dependencies by one pip install command
-RUN pip3 install --no-cache-dir pycocotools==2.0.0
-
-# Install git application dependencies
-RUN apt-get update && \
-    apt-get install -y ssh netcat-openbsd git curl zip  && \
-    wget -qO /dev/stdout https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash && \
-    apt-get install -y git-lfs && \
-    git lfs install && \
-    rm -rf /var/lib/apt/lists/* && \
+RUN adduser --shell /bin/bash --disabled-password --gecos "" ${USER} && \
     if [ -z ${socks_proxy} ]; then \
         echo export "GIT_SSH_COMMAND=\"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30\"" >> ${HOME}/.bashrc; \
     else \
         echo export "GIT_SSH_COMMAND=\"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ProxyCommand='nc -X 5 -x ${socks_proxy} %h %p'\"" >> ${HOME}/.bashrc; \
     fi
 
-# CUDA support
-ARG CUDA_SUPPORT
-ENV CUDA_SUPPORT=${CUDA_SUPPORT}
-RUN if [ "$CUDA_SUPPORT" = "yes" ]; then \
-        /tmp/components/cuda/install.sh; \
+ARG CLAM_AV="no"
+RUN if [ "$CLAM_AV" = "yes" ]; then \
+        apt-get update && \
+        apt-get --no-install-recommends install -yq \
+            clamav \
+            libclamunrar9 && \
+        sed -i 's/ReceiveTimeout 30/ReceiveTimeout 300/g' /etc/clamav/freshclam.conf && \
+        freshclam && \
+        chown -R ${USER}:${USER} /var/lib/clamav && \
+        rm -rf /var/lib/apt/lists/*; \
     fi
 
-# TODO: CHANGE URL
-ARG WITH_DEXTR
-ENV WITH_DEXTR=${WITH_DEXTR}
-ENV DEXTR_MODEL_DIR=${HOME}/dextr
-RUN if [ "$WITH_DEXTR" = "yes" ]; then \
-        mkdir ${DEXTR_MODEL_DIR} -p && \
-        wget https://download.01.org/openvinotoolkit/models_contrib/cvat/dextr_model_v1.zip -O ${DEXTR_MODEL_DIR}/dextr.zip && \
-        unzip ${DEXTR_MODEL_DIR}/dextr.zip -d ${DEXTR_MODEL_DIR} && rm ${DEXTR_MODEL_DIR}/dextr.zip; \
+# Install wheels from the build image
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:${PATH}"
+ARG PIP_VERSION
+ARG PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN python -m pip install -U pip==${PIP_VERSION}
+RUN --mount=type=bind,from=build-image,source=/tmp/wheelhouse,target=/mnt/wheelhouse \
+    --mount=type=bind,from=build-image-av,source=/tmp/wheelhouse,target=/mnt/wheelhouse-av \
+    python -m pip install --no-index /mnt/wheelhouse/*.whl /mnt/wheelhouse-av/*.whl
+
+ENV NUMPROCS=1
+COPY --from=build-image-av /opt/ffmpeg/lib /usr/lib
+
+# These variables are required for supervisord substitutions in files
+# This library allows remote python debugging with VS Code
+ARG CVAT_DEBUG_ENABLED
+RUN if [ "${CVAT_DEBUG_ENABLED}" = 'yes' ]; then \
+        python3 -m pip install --no-cache-dir debugpy; \
     fi
 
-COPY ssh ${HOME}/.ssh
-COPY utils ${HOME}/utils
-COPY cvat/ ${HOME}/cvat
-COPY cvat-core/ ${HOME}/cvat-core
-COPY tests ${HOME}/tests
-# Binary option is necessary to correctly apply the patch on Windows platform.
-# https://unix.stackexchange.com/questions/239364/how-to-fix-hunk-1-failed-at-1-different-line-endings-message
-RUN patch --binary -p1 < ${HOME}/cvat/apps/engine/static/engine/js/3rdparty.patch
-RUN chown -R ${USER}:${USER} .
+# Install and initialize CVAT, copy all necessary files
+COPY cvat/nginx.conf /etc/nginx/nginx.conf
+COPY --chown=${USER} components /tmp/components
+COPY --chown=${USER} supervisord/ ${HOME}/supervisord
+COPY --chown=${USER} ssh ${HOME}/.ssh
+COPY --chown=${USER} wait-for-it.sh manage.py backend_entrypoint.sh ${HOME}/
+COPY --chown=${USER} utils/ ${HOME}/utils
+COPY --chown=${USER} cvat/ ${HOME}/cvat
+COPY --chown=${USER} rqscheduler.py ${HOME}
+
+ARG COVERAGE_PROCESS_START
+RUN if [ "${COVERAGE_PROCESS_START}" ]; then \
+        echo "import coverage; coverage.process_startup()" > /opt/venv/lib/python3.10/site-packages/coverage_subprocess.pth; \
+    fi
 
 # RUN all commands below as 'django' user
 USER ${USER}
+WORKDIR ${HOME}
 
-RUN mkdir data share media keys logs /tmp/supervisord
-RUN python3 manage.py collectstatic
+RUN mkdir -p data share keys logs /tmp/supervisord static
 
-EXPOSE 8080 8443
+EXPOSE 8080
 ENTRYPOINT ["/usr/bin/supervisord"]
+CMD ["-c", "supervisord/all.conf"]

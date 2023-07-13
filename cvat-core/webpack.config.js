@@ -1,6 +1,9 @@
+// Copyright (C) 2020-2022 Intel Corporation
+//
+// SPDX-License-Identifier: MIT
+
 /* global
-    require:true,
-    __dirname:true,
+    __dirname:true
 */
 
 const path = require('path');
@@ -9,17 +12,33 @@ const nodeConfig = {
     target: 'node',
     mode: 'development',
     devtool: 'source-map',
-    entry: './src/api.js',
+    entry: './src/api.ts',
     output: {
         path: path.resolve(__dirname, 'dist'),
         filename: 'cvat-core.node.js',
         libraryTarget: 'commonjs',
     },
+    resolve: {
+        extensions: ['.ts', '.js'],
+    },
     module: {
-        rules: [{
-            test: /.js?$/,
-            exclude: /node_modules/,
-        }],
+        rules: [
+            {
+                test: /.ts?$/,
+                exclude: /node_modules/,
+                use: {
+                    loader: 'babel-loader',
+                    options: {
+                        plugins: [
+                            '@babel/plugin-proposal-class-properties',
+                            '@babel/plugin-proposal-optional-chaining',
+                        ],
+                        presets: ['@babel/preset-env', '@babel/typescript'],
+                        sourceType: 'unambiguous',
+                    },
+                },
+            },
+        ],
     },
     stats: {
         warnings: false,
@@ -30,38 +49,59 @@ const webConfig = {
     target: 'web',
     mode: 'production',
     devtool: 'source-map',
-    entry: './src/api.js',
+    entry: {
+        'cvat-core': './src/api.ts',
+    },
     output: {
         path: path.resolve(__dirname, 'dist'),
-        filename: 'cvat-core.min.js',
-        library: 'cvat',
+        filename: '[name].[contenthash].min.js',
+        library: 'cvat-core.js',
         libraryTarget: 'window',
     },
+    resolve: {
+        extensions: ['.ts', '.js'],
+    },
     module: {
-        rules: [{
-            test: /.js?$/,
-            exclude: /node_modules/,
-            use: {
-                loader: 'babel-loader',
-                options: {
-                    presets: [
-                        ['@babel/preset-env', {
-                            targets: {
-                                chrome: 58,
-                            },
-                            useBuiltIns: 'usage',
-                            corejs: 3,
-                            loose: false,
-                            spec: false,
-                            debug: false,
-                            include: [],
-                            exclude: [],
-                        }],
-                    ],
-                    sourceType: 'unambiguous',
+        rules: [
+            {
+                test: /.ts?$/,
+                exclude: /node_modules/,
+                use: {
+                    loader: 'babel-loader',
+                    options: {
+                        plugins: [
+                            '@babel/plugin-proposal-class-properties',
+                            '@babel/plugin-proposal-optional-chaining',
+                        ],
+                        presets: ['@babel/preset-env', '@babel/typescript'],
+                        sourceType: 'unambiguous',
+                    },
                 },
             },
-        }],
+            {
+                test: /3rdparty\/.*\.worker\.js$/,
+                use: {
+                    loader: 'worker-loader',
+                    options: {
+                        publicPath: '/static/engine/js/3rdparty/',
+                        filename: '[name].[contenthash].js',
+                        esModule: false,
+                    },
+                },
+            },
+            {
+                test: /\.worker\.js$/,
+                exclude: /3rdparty/,
+                use: {
+                    loader: 'worker-loader',
+                    options: {
+                        publicPath: '/static/engine/js/',
+                        filename: '[name].[contenthash].js',
+                        esModule: false,
+                    },
+                },
+            },
+        ],
     },
 };
 

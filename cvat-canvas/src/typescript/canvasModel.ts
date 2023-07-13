@@ -1,17 +1,20 @@
-/*
-* Copyright (C) 2019 Intel Corporation
-* SPDX-License-Identifier: MIT
-*/
+// Copyright (C) 2019-2022 Intel Corporation
+// Copyright (C) 2022 CVAT.ai Corporation
+//
+// SPDX-License-Identifier: MIT
 
-// Disable till full implementation
-/* eslint class-methods-use-this: "off" */
-
+import consts from './consts';
 import { MasterImpl } from './master';
-
 
 export interface Size {
     width: number;
     height: number;
+}
+
+export interface Image {
+    renderWidth: number;
+    renderHeight: number;
+    imageData: ImageData | CanvasImageSource;
 }
 
 export interface Position {
@@ -36,22 +39,115 @@ export interface FocusData {
 }
 
 export interface ActiveElement {
-    clientID: number;
-    attributeID: number;
+    clientID: number | null;
+    attributeID: number | null;
+}
+
+export enum HighlightSeverity {
+    ERROR = 'error',
+    WARNING = 'warning',
+}
+
+export interface HighlightedElements {
+    elementsIDs: number [];
+    severity: HighlightSeverity;
+}
+
+export enum RectDrawingMethod {
+    CLASSIC = 'By 2 points',
+    EXTREME_POINTS = 'By 4 points',
+}
+
+export enum CuboidDrawingMethod {
+    CLASSIC = 'From rectangle',
+    CORNER_POINTS = 'By 4 points',
+}
+
+export enum ColorBy {
+    INSTANCE = 'Instance',
+    GROUP = 'Group',
+    LABEL = 'Label',
+}
+
+export interface Configuration {
+    smoothImage?: boolean;
+    autoborders?: boolean;
+    displayAllText?: boolean;
+    textFontSize?: number;
+    textPosition?: 'auto' | 'center';
+    textContent?: string;
+    undefinedAttrValue?: string;
+    showProjections?: boolean;
+    showConflicts?: boolean;
+    forceDisableEditing?: boolean;
+    intelligentPolygonCrop?: boolean;
+    forceFrameUpdate?: boolean;
+    CSSImageFilter?: string;
+    colorBy?: ColorBy;
+    selectedShapeOpacity?: number;
+    shapeOpacity?: number;
+    controlPointsSize?: number;
+    outlinedBorders?: string | false;
+    resetZoom?: boolean;
+}
+
+export interface BrushTool {
+    type: 'brush' | 'eraser' | 'polygon-plus' | 'polygon-minus';
+    color: string;
+    form: 'circle' | 'square';
+    size: number;
 }
 
 export interface DrawData {
     enabled: boolean;
+    continue?: boolean;
     shapeType?: string;
+    rectDrawingMethod?: RectDrawingMethod;
+    cuboidDrawingMethod?: CuboidDrawingMethod;
+    skeletonSVG?: string;
     numberOfPoints?: number;
     initialState?: any;
     crosshair?: boolean;
+    brushTool?: BrushTool;
+    redraw?: number;
+    onDrawDone?: (data: object) => void;
+    onUpdateConfiguration?: (configuration: { brushTool?: Pick<BrushTool, 'size'> }) => void;
 }
 
-export interface EditData {
+export interface InteractionData {
+    enabled: boolean;
+    shapeType?: string;
+    crosshair?: boolean;
+    minPosVertices?: number;
+    minNegVertices?: number;
+    startWithBox?: boolean;
+    enableThreshold?: boolean;
+    enableSliding?: boolean;
+    allowRemoveOnlyLast?: boolean;
+    intermediateShape?: {
+        shapeType: string;
+        points: number[];
+    };
+    onChangeToolsBlockerState?: (event: string) => void;
+}
+
+export interface InteractionResult {
+    points: number[];
+    shapeType: string;
+    button: number;
+}
+
+export interface PolyEditData {
     enabled: boolean;
     state: any;
     pointID: number;
+}
+
+export interface MasksEditData {
+    enabled: boolean;
+    state?: any;
+    brushTool?: BrushTool;
+    onUpdateConfiguration?: (configuration: { brushTool?: Pick<BrushTool, 'size'> }) => void;
 }
 
 export interface GroupData {
@@ -71,26 +167,37 @@ export enum FrameZoom {
     MAX = 10,
 }
 
-export enum Rotation {
-    ANTICLOCKWISE90,
-    CLOCKWISE90,
-}
-
 export enum UpdateReasons {
-    IMAGE = 'image',
-    OBJECTS = 'objects',
-    ZOOM = 'zoom',
-    FIT = 'fit',
-    MOVE = 'move',
-    GRID = 'grid',
-    FOCUS = 'focus',
-    ACTIVATE = 'activate',
+    IMAGE_CHANGED = 'image_changed',
+    IMAGE_ZOOMED = 'image_zoomed',
+    IMAGE_FITTED = 'image_fitted',
+    IMAGE_MOVED = 'image_moved',
+    IMAGE_ROTATED = 'image_rotated',
+    GRID_UPDATED = 'grid_updated',
+
+    ISSUE_REGIONS_UPDATED = 'issue_regions_updated',
+    OBJECTS_UPDATED = 'objects_updated',
+    SHAPE_ACTIVATED = 'shape_activated',
+    SHAPE_FOCUSED = 'shape_focused',
+    SHAPE_HIGHLIGHTED = 'shape_highlighted',
+
+    FITTED_CANVAS = 'fitted_canvas',
+
+    INTERACT = 'interact',
     DRAW = 'draw',
+    EDIT = 'edit',
     MERGE = 'merge',
     SPLIT = 'split',
     GROUP = 'group',
     SELECT = 'select',
     CANCEL = 'cancel',
+    BITMAP = 'bitmap',
+    SELECT_REGION = 'select_region',
+    DRAG_CANVAS = 'drag_canvas',
+    ZOOM_CANVAS = 'zoom_canvas',
+    CONFIG_UPDATED = 'config_updated',
+    DATA_FAILED = 'data_failed',
+    DESTROY = 'destroy',
 }
 
 export enum Mode {
@@ -102,62 +209,142 @@ export enum Mode {
     MERGE = 'merge',
     SPLIT = 'split',
     GROUP = 'group',
+    INTERACT = 'interact',
+    SELECT_REGION = 'select_region',
+    DRAG_CANVAS = 'drag_canvas',
+    ZOOM_CANVAS = 'zoom_canvas',
 }
 
 export interface CanvasModel {
-    readonly image: string;
+    readonly imageBitmap: boolean;
+    readonly imageIsDeleted: boolean;
+    readonly image: Image | null;
+    readonly issueRegions: Record<number, { hidden: boolean; points: number[] }>;
     readonly objects: any[];
+    readonly zLayer: number | null;
     readonly gridSize: Size;
     readonly focusData: FocusData;
     readonly activeElement: ActiveElement;
+    readonly highlightedElements: HighlightedElements;
     readonly drawData: DrawData;
+    readonly editData: MasksEditData;
+    readonly interactionData: InteractionData;
     readonly mergeData: MergeData;
     readonly splitData: SplitData;
     readonly groupData: GroupData;
+    readonly configuration: Configuration;
     readonly selected: any;
     geometry: Geometry;
     mode: Mode;
+    exception: Error | null;
 
     zoom(x: number, y: number, direction: number): void;
     move(topOffset: number, leftOffset: number): void;
 
-    setup(frameData: any, objectStates: any[]): void;
-    activate(clientID: number, attributeID: number): void;
-    rotate(rotation: Rotation, remember: boolean): void;
+    setup(frameData: any, objectStates: any[], zLayer: number): void;
+    setupIssueRegions(issueRegions: Record<number, { hidden: boolean; points: number[] }>): void;
+    activate(clientID: number | null, attributeID: number | null): void;
+    highlight(clientIDs: number[] | null, severity: HighlightSeverity): void;
+    rotate(rotationAngle: number): void;
     focus(clientID: number, padding: number): void;
     fit(): void;
     grid(stepX: number, stepY: number): void;
 
     draw(drawData: DrawData): void;
+    edit(editData: MasksEditData): void;
     group(groupData: GroupData): void;
     split(splitData: SplitData): void;
     merge(mergeData: MergeData): void;
     select(objectState: any): void;
+    interact(interactionData: InteractionData): void;
 
+    fitCanvas(width: number, height: number): void;
+    bitmap(enabled: boolean): void;
+    selectRegion(enabled: boolean): void;
+    dragCanvas(enable: boolean): void;
+    zoomCanvas(enable: boolean): void;
+
+    isAbleToChangeFrame(): boolean;
+    configure(configuration: Configuration): void;
     cancel(): void;
+    destroy(): void;
+}
+
+const defaultData = {
+    drawData: {
+        enabled: false,
+    },
+    editData: {
+        enabled: false,
+    },
+    interactionData: {
+        enabled: false,
+    },
+    mergeData: {
+        enabled: false,
+    },
+    groupData: {
+        enabled: false,
+    },
+    splitData: {
+        enabled: false,
+    },
+};
+
+function hasShapeIsBeingDrawn(): boolean {
+    const [element] = window.document.getElementsByClassName('cvat_canvas_shape_drawing');
+    if (element) {
+        return !!(element as any).instance.remember('_paintHandler');
+    }
+
+    return false;
+}
+
+function disableInternalSVGDrawing(data: DrawData | MasksEditData, currentData: DrawData | MasksEditData): boolean {
+    // P.S. spaghetti code, but probably significant refactoring needed to find a better solution
+    // when it is a mask drawing/editing using polygon fill
+    // a user needs to close drawing/editing twice
+    // first close stops internal drawing/editing with svg.js
+    // the second one stops drawing/editing mask itself
+
+    return !data.enabled && currentData.enabled &&
+        (('shapeType' in currentData && currentData.shapeType === 'mask') ||
+        ('state' in currentData && currentData.state.shapeType === 'mask')) &&
+        currentData.brushTool?.type?.startsWith('polygon-') &&
+        hasShapeIsBeingDrawn();
 }
 
 export class CanvasModelImpl extends MasterImpl implements CanvasModel {
     private data: {
         activeElement: ActiveElement;
+        highlightedElements: HighlightedElements;
         angle: number;
         canvasSize: Size;
-        image: string;
+        configuration: Configuration;
+        imageBitmap: boolean;
+        image: Image | null;
+        imageID: number | null;
         imageOffset: number;
         imageSize: Size;
+        imageIsDeleted: boolean;
         focusData: FocusData;
         gridSize: Size;
-        left: number;
         objects: any[];
-        rememberAngle: boolean;
+        issueRegions: Record<number, { hidden: boolean; points: number[] }>;
         scale: number;
         top: number;
+        left: number;
+        fittedScale: number;
+        zLayer: number | null;
         drawData: DrawData;
+        editData: MasksEditData;
+        interactionData: InteractionData;
         mergeData: MergeData;
         groupData: GroupData;
         splitData: SplitData;
         selected: any;
         mode: Mode;
+        exception: Error | null;
     };
 
     public constructor() {
@@ -168,17 +355,45 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
                 clientID: null,
                 attributeID: null,
             },
+            highlightedElements: {
+                elementsIDs: [],
+                severity: null,
+            },
             angle: 0,
             canvasSize: {
                 height: 0,
                 width: 0,
             },
-            image: '',
+            configuration: {
+                smoothImage: true,
+                autoborders: false,
+                displayAllText: false,
+                showProjections: false,
+                showConflicts: false,
+                forceDisableEditing: false,
+                intelligentPolygonCrop: false,
+                forceFrameUpdate: false,
+                CSSImageFilter: '',
+                colorBy: ColorBy.LABEL,
+                selectedShapeOpacity: 0.5,
+                shapeOpacity: 0.2,
+                outlinedBorders: false,
+                resetZoom: true,
+                textFontSize: consts.DEFAULT_SHAPE_TEXT_SIZE,
+                controlPointsSize: consts.BASE_POINT_SIZE,
+                textPosition: consts.DEFAULT_SHAPE_TEXT_POSITION,
+                textContent: consts.DEFAULT_SHAPE_TEXT_CONTENT,
+                undefinedAttrValue: consts.DEFAULT_UNDEFINED_ATTR_VALUE,
+            },
+            imageBitmap: false,
+            image: null,
+            imageID: null,
             imageOffset: 0,
             imageSize: {
                 height: 0,
                 width: 0,
             },
+            imageIsDeleted: false,
             focusData: {
                 clientID: 0,
                 padding: 0,
@@ -187,90 +402,198 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
                 height: 100,
                 width: 100,
             },
-            left: 0,
             objects: [],
-            rememberAngle: false,
+            issueRegions: {},
             scale: 1,
             top: 0,
-            drawData: {
-                enabled: false,
-                shapeType: null,
-                numberOfPoints: null,
-                initialState: null,
-            },
-            mergeData: {
-                enabled: false,
-            },
-            groupData: {
-                enabled: false,
-            },
-            splitData: {
-                enabled: false,
-            },
+            left: 0,
+            fittedScale: 0,
+            zLayer: null,
             selected: null,
-            mode: null,
+            mode: Mode.IDLE,
+            exception: null,
+            ...defaultData,
         };
     }
 
     public zoom(x: number, y: number, direction: number): void {
         const oldScale: number = this.data.scale;
-        const newScale: number = direction > 0 ? oldScale * 6 / 5 : oldScale * 5 / 6;
+        const newScale: number = direction > 0 ? (oldScale * 6) / 5 : (oldScale * 5) / 6;
         this.data.scale = Math.min(Math.max(newScale, FrameZoom.MIN), FrameZoom.MAX);
 
         const { angle } = this.data;
 
-        const mutiplier = Math.sin(angle * Math.PI / 180) + Math.cos(angle * Math.PI / 180);
+        const mutiplier = Math.sin((angle * Math.PI) / 180) + Math.cos((angle * Math.PI) / 180);
         if ((angle / 90) % 2) {
             // 90, 270, ..
-            this.data.top += mutiplier * ((x - this.data.imageSize.width / 2)
-                * (oldScale / this.data.scale - 1)) * this.data.scale;
-            this.data.left -= mutiplier * ((y - this.data.imageSize.height / 2)
-                * (oldScale / this.data.scale - 1)) * this.data.scale;
+            const topMultiplier = (x - this.data.imageSize.width / 2) * (oldScale / this.data.scale - 1);
+            const leftMultiplier = (y - this.data.imageSize.height / 2) * (oldScale / this.data.scale - 1);
+            this.data.top += mutiplier * topMultiplier * this.data.scale;
+            this.data.left -= mutiplier * leftMultiplier * this.data.scale;
         } else {
-            this.data.left += mutiplier * ((x - this.data.imageSize.width / 2)
-                * (oldScale / this.data.scale - 1)) * this.data.scale;
-            this.data.top += mutiplier * ((y - this.data.imageSize.height / 2)
-                * (oldScale / this.data.scale - 1)) * this.data.scale;
+            const leftMultiplier = (x - this.data.imageSize.width / 2) * (oldScale / this.data.scale - 1);
+            const topMultiplier = (y - this.data.imageSize.height / 2) * (oldScale / this.data.scale - 1);
+            this.data.left += mutiplier * leftMultiplier * this.data.scale;
+            this.data.top += mutiplier * topMultiplier * this.data.scale;
         }
 
-        this.notify(UpdateReasons.ZOOM);
+        this.notify(UpdateReasons.IMAGE_ZOOMED);
     }
 
     public move(topOffset: number, leftOffset: number): void {
         this.data.top += topOffset;
         this.data.left += leftOffset;
-        this.notify(UpdateReasons.MOVE);
+        this.notify(UpdateReasons.IMAGE_MOVED);
     }
 
-    public setup(frameData: any, objectStates: any[]): void {
-        frameData.data(
-            (): void => {
-                this.data.image = '';
-                this.notify(UpdateReasons.IMAGE);
-            },
-        ).then((data: string): void => {
-            this.data.imageSize = {
-                height: (frameData.height as number),
-                width: (frameData.width as number),
-            };
+    public fitCanvas(width: number, height: number): void {
+        this.data.canvasSize.height = height;
+        this.data.canvasSize.width = width;
 
-            if (!this.data.rememberAngle) {
-                this.data.angle = 0;
-            }
+        this.data.imageOffset = Math.floor(
+            Math.max(this.data.canvasSize.height / FrameZoom.MIN, this.data.canvasSize.width / FrameZoom.MIN),
+        );
 
-            this.data.image = data;
-            this.notify(UpdateReasons.IMAGE);
-            this.data.objects = objectStates;
-            this.notify(UpdateReasons.OBJECTS);
-        }).catch((exception: any): void => {
-            throw exception;
-        });
+        this.notify(UpdateReasons.FITTED_CANVAS);
+        this.notify(UpdateReasons.OBJECTS_UPDATED);
+        this.notify(UpdateReasons.ISSUE_REGIONS_UPDATED);
     }
 
-    public activate(clientID: number, attributeID: number): void {
-        if (this.data.mode !== Mode.IDLE) {
-            // Exception or just return?
+    public bitmap(enabled: boolean): void {
+        this.data.imageBitmap = enabled;
+        this.notify(UpdateReasons.BITMAP);
+    }
+
+    public selectRegion(enable: boolean): void {
+        if (enable && this.data.mode !== Mode.IDLE) {
             throw Error(`Canvas is busy. Action: ${this.data.mode}`);
+        }
+
+        if (!enable && this.data.mode !== Mode.SELECT_REGION) {
+            throw Error(`Canvas is not in the region selecting mode. Action: ${this.data.mode}`);
+        }
+
+        this.data.mode = enable ? Mode.SELECT_REGION : Mode.IDLE;
+        this.notify(UpdateReasons.SELECT_REGION);
+    }
+
+    public dragCanvas(enable: boolean): void {
+        if (enable && this.data.mode !== Mode.IDLE) {
+            throw Error(`Canvas is busy. Action: ${this.data.mode}`);
+        }
+
+        if (!enable && this.data.mode !== Mode.DRAG_CANVAS) {
+            throw Error(`Canvas is not in the drag mode. Action: ${this.data.mode}`);
+        }
+
+        this.data.mode = enable ? Mode.DRAG_CANVAS : Mode.IDLE;
+        this.notify(UpdateReasons.DRAG_CANVAS);
+    }
+
+    public zoomCanvas(enable: boolean): void {
+        if (enable && this.data.mode !== Mode.IDLE) {
+            throw Error(`Canvas is busy. Action: ${this.data.mode}`);
+        }
+
+        if (!enable && this.data.mode !== Mode.ZOOM_CANVAS) {
+            throw Error(`Canvas is not in the zoom mode. Action: ${this.data.mode}`);
+        }
+
+        this.data.mode = enable ? Mode.ZOOM_CANVAS : Mode.IDLE;
+        this.notify(UpdateReasons.ZOOM_CANVAS);
+    }
+
+    public setup(frameData: any, objectStates: any[], zLayer: number): void {
+        if (this.data.imageID !== frameData.number) {
+            if ([Mode.EDIT, Mode.DRAG, Mode.RESIZE].includes(this.data.mode)) {
+                throw Error(`Canvas is busy. Action: ${this.data.mode}`);
+            }
+        }
+        if (frameData.number === this.data.imageID &&
+            frameData.deleted === this.data.imageIsDeleted &&
+            !this.data.configuration.forceFrameUpdate
+        ) {
+            this.data.zLayer = zLayer;
+            this.data.objects = objectStates;
+            this.notify(UpdateReasons.OBJECTS_UPDATED);
+            return;
+        }
+
+        this.data.imageID = frameData.number;
+        frameData
+            .data((): void => {
+                this.data.image = null;
+                this.notify(UpdateReasons.IMAGE_CHANGED);
+            })
+            .then((data: Image): void => {
+                if (frameData.number !== this.data.imageID) {
+                    // already another image
+                    return;
+                }
+
+                const relativeScaling = this.data.scale / this.data.fittedScale;
+                const prevImageLeft = this.data.left;
+                const prevImageTop = this.data.top;
+                const prevImageWidth = this.data.imageSize.width;
+                const prevImageHeight = this.data.imageSize.height;
+
+                this.data.imageSize = {
+                    height: frameData.height as number,
+                    width: frameData.width as number,
+                };
+
+                this.data.image = data;
+                this.data.imageIsDeleted = frameData.deleted;
+                if (this.data.imageIsDeleted) {
+                    this.data.angle = 0;
+                }
+
+                this.fit();
+
+                // restore correct image position after switching to a new frame
+                // if corresponding option is disabled
+                // prevImageHeight and prevImageWidth are initialized by 0 by default
+                if (prevImageHeight !== 0 && prevImageWidth !== 0 && !this.data.configuration.resetZoom) {
+                    const leftOffset = Math.round((this.data.imageSize.width - prevImageWidth) / 2);
+                    const topOffset = Math.round((this.data.imageSize.height - prevImageHeight) / 2);
+                    this.data.left = prevImageLeft - leftOffset;
+                    this.data.top = prevImageTop - topOffset;
+                    this.data.scale *= relativeScaling;
+                }
+
+                this.notify(UpdateReasons.IMAGE_CHANGED);
+                this.data.zLayer = zLayer;
+                this.data.objects = objectStates;
+                this.notify(UpdateReasons.OBJECTS_UPDATED);
+            })
+            .catch((exception: any): void => {
+                this.data.exception = exception;
+                // don't notify when the frame is no longer needed
+                if (typeof exception !== 'number' || exception === this.data.imageID) {
+                    this.notify(UpdateReasons.DATA_FAILED);
+                }
+            });
+    }
+
+    public setupIssueRegions(issueRegions: Record<number, { hidden: boolean; points: number[] }>): void {
+        this.data.issueRegions = issueRegions;
+        this.notify(UpdateReasons.ISSUE_REGIONS_UPDATED);
+    }
+
+    public activate(clientID: number | null, attributeID: number | null): void {
+        if (this.data.activeElement.clientID === clientID && this.data.activeElement.attributeID === attributeID) {
+            return;
+        }
+
+        if (this.data.mode !== Mode.IDLE && clientID !== null) {
+            throw Error(`Canvas is busy. Action: ${this.data.mode}`);
+        }
+
+        if (typeof clientID === 'number') {
+            const [state] = this.objects.filter((_state: any): boolean => _state.clientID === clientID);
+            if (!state || state.objectType === 'tag') {
+                return;
+            }
         }
 
         this.data.activeElement = {
@@ -278,19 +601,30 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
             attributeID,
         };
 
-        this.notify(UpdateReasons.ACTIVATE);
+        this.notify(UpdateReasons.SHAPE_ACTIVATED);
     }
 
-    public rotate(rotation: Rotation, remember: boolean = false): void {
-        if (rotation === Rotation.CLOCKWISE90) {
-            this.data.angle += 90;
+    public highlight(clientIDs: number[] | null, severity: HighlightSeverity | null): void {
+        if (Array.isArray(clientIDs)) {
+            this.data.highlightedElements = {
+                elementsIDs: clientIDs,
+                severity,
+            };
         } else {
-            this.data.angle -= 90;
+            this.data.highlightedElements = {
+                elementsIDs: [],
+                severity: null,
+            };
         }
 
-        this.data.angle %= 360;
-        this.data.rememberAngle = remember;
-        this.fit();
+        this.notify(UpdateReasons.SHAPE_HIGHLIGHTED);
+    }
+
+    public rotate(rotationAngle: number): void {
+        if (this.data.angle !== rotationAngle && !this.data.imageIsDeleted) {
+            this.data.angle = (360 + Math.floor(rotationAngle / 90) * 90) % 360;
+            this.notify(UpdateReasons.IMAGE_ROTATED);
+        }
     }
 
     public focus(clientID: number, padding: number): void {
@@ -299,7 +633,7 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
             padding,
         };
 
-        this.notify(UpdateReasons.FOCUS);
+        this.notify(UpdateReasons.SHAPE_FOCUSED);
     }
 
     public fit(): void {
@@ -318,15 +652,15 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
             );
         }
 
-        this.data.scale = Math.min(
-            Math.max(this.data.scale, FrameZoom.MIN),
-            FrameZoom.MAX,
-        );
+        this.data.scale = Math.min(Math.max(this.data.scale, FrameZoom.MIN), FrameZoom.MAX);
+        this.data.top = this.data.canvasSize.height / 2 - this.data.imageSize.height / 2;
+        this.data.left = this.data.canvasSize.width / 2 - this.data.imageSize.width / 2;
 
-        this.data.top = (this.data.canvasSize.height / 2 - this.data.imageSize.height / 2);
-        this.data.left = (this.data.canvasSize.width / 2 - this.data.imageSize.width / 2);
+        // scale is changed during zooming or translating
+        // so, remember fitted scale to compute fit-relative scaling
+        this.data.fittedScale = this.data.scale;
 
-        this.notify(UpdateReasons.FIT);
+        this.notify(UpdateReasons.IMAGE_FITTED);
     }
 
     public grid(stepX: number, stepY: number): void {
@@ -335,7 +669,7 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
             width: stepX,
         };
 
-        this.notify(UpdateReasons.GRID);
+        this.notify(UpdateReasons.GRID_UPDATED);
     }
 
     public draw(drawData: DrawData): void {
@@ -344,11 +678,13 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
         }
 
         if (drawData.enabled) {
-            if (this.data.drawData.enabled) {
-                throw new Error('Drawing has been already started');
-            } else if (!drawData.shapeType && !drawData.initialState) {
+            if (drawData.shapeType === 'skeleton' && !drawData.skeletonSVG) {
+                throw new Error('Skeleton template must be specified when drawing a skeleton');
+            }
+
+            if (!drawData.shapeType && !drawData.initialState) {
                 throw new Error('A shape type is not specified');
-            } else if (typeof (drawData.numberOfPoints) !== 'undefined') {
+            } else if (typeof drawData.numberOfPoints !== 'undefined') {
                 if (drawData.shapeType === 'polygon' && drawData.numberOfPoints < 3) {
                     throw new Error('A polygon consists of at least 3 points');
                 } else if (drawData.shapeType === 'polyline' && drawData.numberOfPoints < 2) {
@@ -357,11 +693,86 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
             }
         }
 
-        this.data.drawData = { ...drawData };
-        if (this.data.drawData.initialState) {
-            this.data.drawData.shapeType = this.data.drawData.initialState.shapeType;
+        if (typeof drawData.redraw === 'number') {
+            const clientID = drawData.redraw;
+            const [state] = this.data.objects.filter((_state: any): boolean => _state.clientID === clientID);
+
+            if (state) {
+                this.data.drawData = { ...drawData };
+                this.data.drawData.shapeType = state.shapeType;
+            } else {
+                return;
+            }
+        } else {
+            if (disableInternalSVGDrawing(drawData, this.data.drawData)) {
+                this.notify(UpdateReasons.DRAW);
+                return;
+            }
+
+            this.data.drawData = { ...drawData };
+            if (this.data.drawData.initialState) {
+                this.data.drawData.shapeType = this.data.drawData.initialState.shapeType;
+            }
         }
+
+        // install default values for drawing method
+        if (drawData.enabled) {
+            if (drawData.shapeType === 'rectangle') {
+                this.data.drawData.rectDrawingMethod = drawData.rectDrawingMethod || RectDrawingMethod.CLASSIC;
+            }
+            if (drawData.shapeType === 'cuboid') {
+                this.data.drawData.cuboidDrawingMethod = drawData.cuboidDrawingMethod || CuboidDrawingMethod.CLASSIC;
+            }
+        }
+
         this.notify(UpdateReasons.DRAW);
+    }
+
+    public edit(editData: MasksEditData): void {
+        if (![Mode.IDLE, Mode.EDIT].includes(this.data.mode)) {
+            throw Error(`Canvas is busy. Action: ${this.data.mode}`);
+        }
+
+        if (editData.enabled && !editData.state) {
+            throw Error('State must be specified when call edit() editing process');
+        }
+
+        if (this.data.editData.enabled && editData.enabled &&
+            editData.state.clientID !== this.data.editData.state.clientID
+        ) {
+            throw Error('State cannot be updated during editing, need to finish current editing first');
+        }
+
+        if (editData.enabled) {
+            this.data.editData = { ...editData };
+        } else if (disableInternalSVGDrawing(editData, this.data.editData)) {
+            this.notify(UpdateReasons.EDIT);
+            return;
+        } else {
+            this.data.editData = { enabled: false };
+        }
+
+        this.notify(UpdateReasons.EDIT);
+    }
+
+    public interact(interactionData: InteractionData): void {
+        if (![Mode.IDLE, Mode.INTERACT].includes(this.data.mode)) {
+            throw Error(`Canvas is busy. Action: ${this.data.mode}`);
+        }
+        const thresholdChanged = this.data.interactionData.enableThreshold !== interactionData.enableThreshold;
+        if (interactionData.enabled && !interactionData.intermediateShape && !thresholdChanged) {
+            if (this.data.interactionData.enabled) {
+                throw new Error('Interaction has been already started');
+            } else if (!interactionData.shapeType) {
+                throw new Error('A shape type was not specified');
+            }
+        }
+        this.data.interactionData = interactionData;
+        if (typeof this.data.interactionData.crosshair !== 'boolean') {
+            this.data.interactionData.crosshair = true;
+        }
+
+        this.notify(UpdateReasons.INTERACT);
     }
 
     public split(splitData: SplitData): void {
@@ -421,8 +832,99 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
         this.data.selected = null;
     }
 
+    public configure(configuration: Configuration): void {
+        if (typeof configuration.displayAllText === 'boolean') {
+            this.data.configuration.displayAllText = configuration.displayAllText;
+        }
+
+        if (typeof configuration.textFontSize === 'number' && configuration.textFontSize >= consts.MINIMUM_TEXT_FONT_SIZE) {
+            this.data.configuration.textFontSize = configuration.textFontSize;
+        }
+
+        if (typeof configuration.controlPointsSize === 'number') {
+            this.data.configuration.controlPointsSize = configuration.controlPointsSize;
+        }
+
+        if (['auto', 'center'].includes(configuration.textPosition)) {
+            this.data.configuration.textPosition = configuration.textPosition;
+        }
+
+        if (typeof configuration.textContent === 'string') {
+            const splitted = configuration.textContent.split(',').filter((entry: string) => !!entry);
+            if (splitted.every((entry: string) => ['id', 'label', 'attributes', 'source', 'descriptions'].includes(entry))) {
+                this.data.configuration.textContent = configuration.textContent;
+            }
+        }
+
+        if (typeof configuration.showProjections === 'boolean') {
+            this.data.configuration.showProjections = configuration.showProjections;
+        }
+        if (typeof configuration.autoborders === 'boolean') {
+            this.data.configuration.autoborders = configuration.autoborders;
+        }
+        if (typeof configuration.smoothImage === 'boolean') {
+            this.data.configuration.smoothImage = configuration.smoothImage;
+        }
+        if (typeof configuration.undefinedAttrValue === 'string') {
+            this.data.configuration.undefinedAttrValue = configuration.undefinedAttrValue;
+        }
+        if (typeof configuration.forceDisableEditing === 'boolean') {
+            this.data.configuration.forceDisableEditing = configuration.forceDisableEditing;
+        }
+        if (typeof configuration.intelligentPolygonCrop === 'boolean') {
+            this.data.configuration.intelligentPolygonCrop = configuration.intelligentPolygonCrop;
+        }
+        if (typeof configuration.forceFrameUpdate === 'boolean') {
+            this.data.configuration.forceFrameUpdate = configuration.forceFrameUpdate;
+        }
+        if (typeof configuration.resetZoom === 'boolean') {
+            this.data.configuration.resetZoom = configuration.resetZoom;
+        }
+        if (typeof configuration.selectedShapeOpacity === 'number') {
+            this.data.configuration.selectedShapeOpacity = configuration.selectedShapeOpacity;
+        }
+        if (typeof configuration.shapeOpacity === 'number') {
+            this.data.configuration.shapeOpacity = configuration.shapeOpacity;
+        }
+        if (['string', 'boolean'].includes(typeof configuration.outlinedBorders)) {
+            this.data.configuration.outlinedBorders = configuration.outlinedBorders;
+        }
+        if (Object.values(ColorBy).includes(configuration.colorBy)) {
+            this.data.configuration.colorBy = configuration.colorBy;
+        }
+
+        if (typeof configuration.showConflicts === 'boolean') {
+            this.data.configuration.showConflicts = configuration.showConflicts;
+        }
+
+        if (typeof configuration.CSSImageFilter === 'string') {
+            this.data.configuration.CSSImageFilter = configuration.CSSImageFilter;
+        }
+
+        this.notify(UpdateReasons.CONFIG_UPDATED);
+    }
+
+    public isAbleToChangeFrame(): boolean {
+        const isUnable = [Mode.DRAG, Mode.EDIT, Mode.RESIZE, Mode.INTERACT].includes(this.data.mode) ||
+            (this.data.mode === Mode.DRAW && typeof this.data.drawData.redraw === 'number');
+
+        return !isUnable;
+    }
+
     public cancel(): void {
+        this.data = {
+            ...this.data,
+            ...defaultData,
+        };
         this.notify(UpdateReasons.CANCEL);
+    }
+
+    public destroy(): void {
+        this.notify(UpdateReasons.DESTROY);
+    }
+
+    public get configuration(): Configuration {
+        return { ...this.data.configuration };
     }
 
     public get geometry(): Geometry {
@@ -448,17 +950,36 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
         this.data.imageOffset = geometry.offset;
         this.data.scale = geometry.scale;
 
-        this.data.imageOffset = Math.floor(Math.max(
-            this.data.canvasSize.height / FrameZoom.MIN,
-            this.data.canvasSize.width / FrameZoom.MIN,
-        ));
+        this.data.imageOffset = Math.floor(
+            Math.max(this.data.canvasSize.height / FrameZoom.MIN, this.data.canvasSize.width / FrameZoom.MIN),
+        );
     }
 
-    public get image(): string {
+    public get zLayer(): number | null {
+        return this.data.zLayer;
+    }
+
+    public get imageBitmap(): boolean {
+        return this.data.imageBitmap;
+    }
+
+    public get imageIsDeleted(): boolean {
+        return this.data.imageIsDeleted;
+    }
+
+    public get image(): Image | null {
         return this.data.image;
     }
 
+    public get issueRegions(): Record<number, { hidden: boolean; points: number[] }> {
+        return { ...this.data.issueRegions };
+    }
+
     public get objects(): any[] {
+        if (this.data.zLayer !== null) {
+            return this.data.objects.filter((object: any): boolean => object.zOrder <= this.data.zLayer);
+        }
+
         return this.data.objects;
     }
 
@@ -474,8 +995,20 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
         return { ...this.data.activeElement };
     }
 
+    public get highlightedElements(): HighlightedElements {
+        return { ...this.data.highlightedElements };
+    }
+
     public get drawData(): DrawData {
         return { ...this.data.drawData };
+    }
+
+    public get editData(): MasksEditData {
+        return { ...this.data.editData };
+    }
+
+    public get interactionData(): InteractionData {
+        return { ...this.data.interactionData };
     }
 
     public get mergeData(): MergeData {
@@ -500,5 +1033,8 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
 
     public get mode(): Mode {
         return this.data.mode;
+    }
+    public get exception(): Error {
+        return this.data.exception;
     }
 }

@@ -1,28 +1,25 @@
-/*
- * Copyright (C) 2018 Intel Corporation
- * SPDX-License-Identifier: MIT
-*/
-
-/* global
-    require:false
-    jest:false
-    describe:false
-*/
+// Copyright (C) 2020-2022 Intel Corporation
+// Copyright (C) 2022 CVAT.ai Corporation
+//
+// SPDX-License-Identifier: MIT
 
 // Setup mock for a server
 jest.mock('../../src/server-proxy', () => {
-    const mock = require('../mocks/server-proxy.mock');
-    return mock;
+    return {
+        __esModule: true,
+        default: require('../mocks/server-proxy.mock'),
+    };
 });
 
 // Initialize api
-window.cvat = require('../../src/api');
+window.cvat = require('../../src/api').default;
 
 describe('Feature: set attributes for an object state', () => {
     test('set a valid value', () => {
         const state = new window.cvat.classes.ObjectState({
+            label: new window.cvat.classes.Label({ name: 'test label', id: 1, color: '#000000', attributes: [] }),
             objectType: window.cvat.enums.ObjectType.SHAPE,
-            shapeType: window.cvat.enums.ObjectShape.RECTANGLE,
+            shapeType: window.cvat.enums.ShapeType.RECTANGLE,
             frame: 5,
         });
 
@@ -37,8 +34,9 @@ describe('Feature: set attributes for an object state', () => {
 
     test('trying to set a bad value', () => {
         const state = new window.cvat.classes.ObjectState({
+            label: new window.cvat.classes.Label({ name: 'test label', id: 1, color: '#000000', attributes: [] }),
             objectType: window.cvat.enums.ObjectType.SHAPE,
-            shapeType: window.cvat.enums.ObjectShape.RECTANGLE,
+            shapeType: window.cvat.enums.ShapeType.RECTANGLE,
             frame: 5,
         });
 
@@ -62,8 +60,9 @@ describe('Feature: set attributes for an object state', () => {
 describe('Feature: set points for an object state', () => {
     test('set a valid value', () => {
         const state = new window.cvat.classes.ObjectState({
+            label: new window.cvat.classes.Label({ name: 'test label', id: 1, color: '#000000', attributes: [] }),
             objectType: window.cvat.enums.ObjectType.SHAPE,
-            shapeType: window.cvat.enums.ObjectShape.RECTANGLE,
+            shapeType: window.cvat.enums.ShapeType.RECTANGLE,
             frame: 5,
         });
 
@@ -74,8 +73,9 @@ describe('Feature: set points for an object state', () => {
 
     test('trying to set a bad value', () => {
         const state = new window.cvat.classes.ObjectState({
+            label: new window.cvat.classes.Label({ name: 'test label', id: 1, color: '#000000', attributes: [] }),
             objectType: window.cvat.enums.ObjectType.SHAPE,
-            shapeType: window.cvat.enums.ObjectShape.RECTANGLE,
+            shapeType: window.cvat.enums.ShapeType.RECTANGLE,
             frame: 5,
         });
 
@@ -107,7 +107,7 @@ describe('Feature: save object from its state', () => {
         const annotations = await task.annotations.get(0);
         let state = annotations[0];
         expect(state.objectType).toBe(window.cvat.enums.ObjectType.SHAPE);
-        expect(state.shapeType).toBe(window.cvat.enums.ObjectShape.RECTANGLE);
+        expect(state.shapeType).toBe(window.cvat.enums.ShapeType.RECTANGLE);
         state.points = [0, 0, 100, 100];
         state.occluded = true;
         [, state.label] = task.labels;
@@ -125,7 +125,7 @@ describe('Feature: save object from its state', () => {
         const annotations = await task.annotations.get(10);
         let state = annotations[1];
         expect(state.objectType).toBe(window.cvat.enums.ObjectType.TRACK);
-        expect(state.shapeType).toBe(window.cvat.enums.ObjectShape.RECTANGLE);
+        expect(state.shapeType).toBe(window.cvat.enums.ShapeType.RECTANGLE);
 
         state.occluded = true;
         state.lock = true;
@@ -168,30 +168,22 @@ describe('Feature: save object from its state', () => {
         const state = annotations[0];
 
         state.occluded = 'false';
-        await expect(state.save())
-            .rejects.toThrow(window.cvat.exceptions.ArgumentError);
+        await expect(state.save()).rejects.toThrow(window.cvat.exceptions.ArgumentError);
 
-        const oldPoints = state.points;
         state.occluded = false;
-        state.points = ['100', '50', '100', {}];
-        await expect(state.save())
-            .rejects.toThrow(window.cvat.exceptions.ArgumentError);
+        expect(() => state.points = ['100', '50', '100', {}]).toThrow(window.cvat.exceptions.ArgumentError);
 
-        state.points = oldPoints;
         state.lock = 'true';
-        await expect(state.save())
-            .rejects.toThrow(window.cvat.exceptions.ArgumentError);
+        await expect(state.save()).rejects.toThrow(window.cvat.exceptions.ArgumentError);
 
         const oldLabel = state.label;
         state.lock = false;
         state.label = 1;
-        await expect(state.save())
-            .rejects.toThrow(window.cvat.exceptions.ArgumentError);
+        await expect(state.save()).rejects.toThrow(window.cvat.exceptions.ArgumentError);
 
         state.label = oldLabel;
         state.attributes = { 1: {}, 2: false, 3: () => {} };
-        await expect(state.save())
-            .rejects.toThrow(window.cvat.exceptions.ArgumentError);
+        await expect(state.save()).rejects.toThrow(window.cvat.exceptions.ArgumentError);
     });
 
     test('save bad values for a track', async () => {
@@ -200,40 +192,30 @@ describe('Feature: save object from its state', () => {
         const state = annotations[0];
 
         state.occluded = 'false';
-        await expect(state.save())
-            .rejects.toThrow(window.cvat.exceptions.ArgumentError);
+        await expect(state.save()).rejects.toThrow(window.cvat.exceptions.ArgumentError);
 
-        const oldPoints = state.points;
         state.occluded = false;
-        state.points = ['100', '50', '100', {}];
-        await expect(state.save())
-            .rejects.toThrow(window.cvat.exceptions.ArgumentError);
+        expect(() => state.points = ['100', '50', '100', {}]).toThrow(window.cvat.exceptions.ArgumentError);
 
-        state.points = oldPoints;
         state.lock = 'true';
-        await expect(state.save())
-            .rejects.toThrow(window.cvat.exceptions.ArgumentError);
+        await expect(state.save()).rejects.toThrow(window.cvat.exceptions.ArgumentError);
 
         const oldLabel = state.label;
         state.lock = false;
         state.label = 1;
-        await expect(state.save())
-            .rejects.toThrow(window.cvat.exceptions.ArgumentError);
+        await expect(state.save()).rejects.toThrow(window.cvat.exceptions.ArgumentError);
 
         state.label = oldLabel;
         state.outside = 5;
-        await expect(state.save())
-            .rejects.toThrow(window.cvat.exceptions.ArgumentError);
+        await expect(state.save()).rejects.toThrow(window.cvat.exceptions.ArgumentError);
 
         state.outside = false;
         state.keyframe = '10';
-        await expect(state.save())
-            .rejects.toThrow(window.cvat.exceptions.ArgumentError);
+        await expect(state.save()).rejects.toThrow(window.cvat.exceptions.ArgumentError);
 
         state.keyframe = true;
         state.attributes = { 1: {}, 2: false, 3: () => {} };
-        await expect(state.save())
-            .rejects.toThrow(window.cvat.exceptions.ArgumentError);
+        await expect(state.save()).rejects.toThrow(window.cvat.exceptions.ArgumentError);
     });
 
     test('trying to change locked shape', async () => {
@@ -289,7 +271,7 @@ describe('Feature: delete object', () => {
         const task = (await window.cvat.tasks.get({ id: 100 }))[0];
         const annotationsBefore = await task.annotations.get(0);
         const { length } = annotationsBefore;
-        await annotationsBefore[0].delete();
+        await annotationsBefore[0].delete(0);
         const annotationsAfter = await task.annotations.get(0);
         expect(annotationsAfter).toHaveLength(length - 1);
     });
@@ -298,50 +280,45 @@ describe('Feature: delete object', () => {
         const task = (await window.cvat.tasks.get({ id: 101 }))[0];
         const annotationsBefore = await task.annotations.get(0);
         const { length } = annotationsBefore;
-        await annotationsBefore[0].delete();
+        await annotationsBefore[0].delete(0);
         const annotationsAfter = await task.annotations.get(0);
         expect(annotationsAfter).toHaveLength(length - 1);
     });
 });
 
-describe('Feature: change z order of an object', () => {
-    test('up z order for a shape', async () => {
-        const task = (await window.cvat.tasks.get({ id: 100 }))[0];
-        const annotations = await task.annotations.get(0);
-        const state = annotations[0];
+describe('Feature: skeletons', () => {
+    test('lock, hide, occluded, outside for skeletons', async () => {
+        const job = (await window.cvat.jobs.get({ jobID: 40 }))[0];
+        let [skeleton] = await job.annotations.get(0, false, JSON.parse('[{"and":[{"==":[{"var":"shape"},"skeleton"]}]}]'));
+        expect(skeleton.shapeType).toBe('skeleton');
+        skeleton.lock = true;
+        skeleton.outside = true;
+        skeleton.occluded = true;
+        skeleton.hidden = true;
+        skeleton = await skeleton.save();
+        expect(skeleton.lock).toBe(true);
+        expect(skeleton.outside).toBe(true);
+        expect(skeleton.occluded).toBe(true);
+        expect(skeleton.hidden).toBe(true);
+        expect(skeleton.elements).toBeInstanceOf(Array);
+        expect(skeleton.elements.length).toBe(skeleton.label.structure.sublabels.length);
+        for (const element of skeleton.elements) {
+            expect(element.lock).toBe(true);
+            expect(element.outside).toBe(true);
+            expect(element.occluded).toBe(true);
+            expect(element.hidden).toBe(true);
+        }
 
-        const { zOrder } = state;
-        await state.up();
-        expect(state.zOrder).toBeGreaterThan(zOrder);
-    });
+        skeleton.elements[0].lock = false;
+        skeleton.elements[0].outside = false;
+        skeleton.elements[0].occluded = false;
+        skeleton.elements[0].hidden = false;
+        skeleton.elements[0].save();
 
-    test('up z order for a track', async () => {
-        const task = (await window.cvat.tasks.get({ id: 101 }))[0];
-        const annotations = await task.annotations.get(0);
-        const state = annotations[0];
-
-        const { zOrder } = state;
-        await state.up();
-        expect(state.zOrder).toBeGreaterThan(zOrder);
-    });
-
-    test('down z order for a shape', async () => {
-        const task = (await window.cvat.tasks.get({ id: 100 }))[0];
-        const annotations = await task.annotations.get(0);
-        const state = annotations[0];
-
-        const { zOrder } = state;
-        await state.down();
-        expect(state.zOrder).toBeLessThan(zOrder);
-    });
-
-    test('down z order for a track', async () => {
-        const task = (await window.cvat.tasks.get({ id: 101 }))[0];
-        const annotations = await task.annotations.get(0);
-        const state = annotations[0];
-
-        const { zOrder } = state;
-        await state.down();
-        expect(state.zOrder).toBeLessThan(zOrder);
+        [skeleton] = await job.annotations.get(0, false, JSON.parse('[{"and":[{"==":[{"var":"shape"},"skeleton"]}]}]'));
+        expect(skeleton.lock).toBe(false);
+        expect(skeleton.outside).toBe(false);
+        expect(skeleton.occluded).toBe(false);
+        expect(skeleton.hidden).toBe(false);
     });
 });

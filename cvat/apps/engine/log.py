@@ -1,11 +1,24 @@
-# Copyright (C) 2018 Intel Corporation
+# Copyright (C) 2018-2022 Intel Corporation
 #
 # SPDX-License-Identifier: MIT
 
-import os
 import logging
+import sys
+import os.path as osp
+from typing import Dict
+from contextlib import contextmanager
+
+from attr import define, field
+from django.conf import settings
+
 from cvat.settings.base import LOGGING
-from .models import Job, Task
+from .models import Job, Task, Project, CloudStorage
+
+def _get_project(pid):
+    try:
+        return Project.objects.get(pk=pid)
+    except Exception:
+        raise Exception('{} key must be a project identifier'.format(pid))
 
 def _get_task(tid):
     try:
@@ -19,16 +32,69 @@ def _get_job(jid):
     except Exception:
         raise Exception('{} key must be a job identifier'.format(jid))
 
-class TaskLoggerStorage:
+def _get_storage(storage_id):
+    try:
+        return CloudStorage.objects.get(pk=storage_id)
+    except Exception:
+        raise Exception('{} key must be a cloud storage identifier'.format(storage_id))
+
+_opened_loggers: Dict[str, logging.Logger] = {}
+
+def get_logger(logger_name, log_file):
+    logger = logging.getLogger(name=logger_name)
+    logger.setLevel(logging.INFO)
+    file_handler = logging.FileHandler(log_file)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    logger.addHandler(logging.StreamHandler(sys.stdout))
+    logger.addHandler(logging.StreamHandler(sys.stderr))
+    _opened_loggers[logger_name] = logger
+    return logger
+
+def _close_logger(logger: logging.Logger):
+    for handler in logger.handlers:
+        handler.close()
+
+class LogManager:
+    def close(self):
+        raise NotImplementedError
+
+class IndexedLogManager(LogManager):
     def __init__(self):
-        self._storage = dict()
+        self._storage: Dict[int, logging.Logger] = {}
 
-    def __getitem__(self, tid):
-        if tid not in self._storage:
-            self._storage[tid] = self._create_task_logger(tid)
-        return self._storage[tid]
+    def close(self):
+        for logger in self._storage.values():
+            _close_logger(logger)
 
-    def _create_task_logger(self, tid):
+        self._storage = {}
+
+    def __getitem__(self, idx: int) -> logging.Logger:
+        """Get logger object"""
+        if idx not in self._storage:
+            self._storage[idx] = self._create_logger(idx)
+        return self._storage[idx]
+
+    def _create_logger(self, _: int) -> logging.Logger:
+        raise NotImplementedError
+
+
+class ProjectLoggerStorage(IndexedLogManager):
+    def _create_logger(self, pid):
+        project = _get_project(pid)
+
+        logger = logging.getLogger('cvat.server.project_{}'.format(pid))
+        server_file = logging.FileHandler(filename=project.get_log_path())
+        formatter = logging.Formatter(LOGGING['formatters']['standard']['format'])
+        server_file.setFormatter(formatter)
+        logger.addHandler(server_file)
+
+        return logger
+
+
+class TaskLoggerStorage(IndexedLogManager):
+    def _create_logger(self, tid):
         task = _get_task(tid)
 
         logger = logging.getLogger('cvat.server.task_{}'.format(tid))
@@ -39,63 +105,70 @@ class TaskLoggerStorage:
 
         return logger
 
-class JobLoggerStorage:
-    def __init__(self):
-        self._storage = dict()
-
-    def __getitem__(self, jid):
-        if jid not in self._storage:
-            self._storage[jid] = self._get_task_logger(jid)
-        return self._storage[jid]
-
-    def _get_task_logger(self, jid):
+class JobLoggerStorage(IndexedLogManager):
+    def _create_logger(self, jid):
         job = _get_job(jid)
         return slogger.task[job.segment.task.id]
 
-class TaskClientLoggerStorage:
-    def __init__(self):
-        self._storage = dict()
+class CloudSourceLoggerStorage(IndexedLogManager):
+    def _create_logger(self, sid):
+        cloud_storage = _get_storage(sid)
 
-    def __getitem__(self, tid):
-        if tid not in self._storage:
-            self._storage[tid] = self._create_client_logger(tid)
-        return self._storage[tid]
-
-    def _create_client_logger(self, tid):
-        task = _get_task(tid)
-        logger = logging.getLogger('cvat.client.task_{}'.format(tid))
-        client_file = logging.FileHandler(filename=task.get_client_log_path())
-        logger.addHandler(client_file)
+        logger = logging.getLogger('cvat.server.cloud_storage_{}'.format(sid))
+        server_file = logging.FileHandler(filename=cloud_storage.get_log_path())
+        formatter = logging.Formatter(LOGGING['formatters']['standard']['format'])
+        server_file.setFormatter(formatter)
+        logger.addHandler(server_file)
 
         return logger
 
-class JobClientLoggerStorage:
-    def __init__(self):
-        self._storage = dict()
+@define(slots=False)
+class _AggregateLogManager(LogManager):
+    def close(self):
+        for logger in vars(self).values(): # vars is incompatible with slots
+            if hasattr(logger, 'close'):
+                logger.close()
 
-    def __getitem__(self, jid):
-        if jid not in self._storage:
-            self._storage[jid] = self._get_task_logger(jid)
-        return self._storage[jid]
+@define(slots=False)
+class ServerLogManager(_AggregateLogManager):
+    project = field(factory=ProjectLoggerStorage)
+    task = field(factory=TaskLoggerStorage)
+    job = field(factory=JobLoggerStorage)
+    cloud_storage = field(factory=CloudSourceLoggerStorage)
+    glob = field(factory=lambda: logging.getLogger('cvat.server'))
 
-    def _get_task_logger(self, jid):
-        job = _get_job(jid)
-        return clogger.task[job.segment.task.id]
+slogger = ServerLogManager()
 
-class dotdict(dict):
-    """dot.notation access to dictionary attributes"""
-    __getattr__ = dict.get
-    __setattr__ = dict.__setitem__
-    __delattr__ = dict.__delitem__
+vlogger = logging.getLogger('vector')
 
-clogger = dotdict({
-    'task': TaskClientLoggerStorage(),
-    'job': JobClientLoggerStorage(),
-    'glob': logging.getLogger('cvat.client'),
-})
+def close_all():
+    """Closes all opened loggers"""
 
-slogger = dotdict({
-    'task': TaskLoggerStorage(),
-    'job': JobLoggerStorage(),
-    'glob': logging.getLogger('cvat.server'),
-})
+    slogger.close()
+
+    for logger in _opened_loggers.values():
+        _close_logger(logger)
+
+    _close_logger(vlogger)
+
+@contextmanager
+def get_migration_logger(migration_name):
+    migration_log_file = '{}.log'.format(migration_name)
+    stdout = sys.stdout
+    stderr = sys.stderr
+    # redirect all stdout to the file
+    log_file_object = open(osp.join(settings.MIGRATIONS_LOGS_ROOT, migration_log_file), 'w')
+    sys.stdout = log_file_object
+    sys.stderr = log_file_object
+
+    log = logging.getLogger(migration_name)
+    log.addHandler(logging.StreamHandler(stdout))
+    log.addHandler(logging.StreamHandler(log_file_object))
+    log.setLevel(logging.INFO)
+
+    try:
+        yield log
+    finally:
+        log_file_object.close()
+        sys.stdout = stdout
+        sys.stderr = stderr

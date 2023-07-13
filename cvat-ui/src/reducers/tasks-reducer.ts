@@ -1,284 +1,187 @@
-import { AnyAction } from 'redux';
-import { TasksActionTypes } from '../actions/tasks-actions';
+// Copyright (C) 2020-2022 Intel Corporation
+// Copyright (C) 2022-2023 CVAT.ai Corporation
+//
+// SPDX-License-Identifier: MIT
 
-import { TasksState, Task } from './interfaces';
+import { AnyAction } from 'redux';
+import { BoundariesActionTypes } from 'actions/boundaries-actions';
+import { TasksActionTypes } from 'actions/tasks-actions';
+import { AuthActionTypes } from 'actions/auth-actions';
+
+import { AnnotationActionTypes } from 'actions/annotation-actions';
+import { TasksState } from '.';
 
 const defaultState: TasksState = {
     initialized: false,
-    tasksFetchingError: null,
+    fetching: false,
+    hideEmpty: false,
+    moveTask: {
+        modalVisible: false,
+        taskId: null,
+    },
     count: 0,
     current: [],
+    previews: {},
     gettingQuery: {
         page: 1,
         id: null,
         search: null,
-        owner: null,
-        assignee: null,
-        name: null,
-        status: null,
-        mode: null,
+        filter: null,
+        sort: null,
+        projectId: null,
     },
     activities: {
-        dumps: {
-            dumpingError: null,
-            byTask: {},
-        },
-        loads: {
-            loadingError: null,
-            loadingDoneMessage: '',
-            byTask: {},
-        },
-        deletes: {
-            deletingError: null,
-            byTask: {},
-        },
+        deletes: {},
     },
 };
 
-export default (inputState: TasksState = defaultState, action: AnyAction): TasksState => {
-    function cleanupTemporaryInfo(stateToResetErrors: TasksState): TasksState {
-        return {
-            ...stateToResetErrors,
-            tasksFetchingError: null,
-            activities: {
-                ...stateToResetErrors.activities,
-                dumps: {
-                    ...stateToResetErrors.activities.dumps,
-                    dumpingError: null,
-                },
-                loads: {
-                    ...stateToResetErrors.activities.loads,
-                    loadingError: null,
-                    loadingDoneMessage: '',
-                },
-            },
-        };
-    }
-
-    const state = cleanupTemporaryInfo(inputState);
-
+export default (state: TasksState = defaultState, action: AnyAction): TasksState => {
     switch (action.type) {
         case TasksActionTypes.GET_TASKS:
             return {
                 ...state,
                 activities: {
                     ...state.activities,
-                    deletes: {
-                        deletingError: null,
-                        byTask: {},
-                    },
+                    deletes: {},
                 },
                 initialized: false,
+                fetching: true,
+                hideEmpty: true,
+                count: 0,
+                gettingQuery: action.payload.updateQuery ? {
+                    ...defaultState.gettingQuery,
+                    ...action.payload.query,
+                } : state.gettingQuery,
             };
         case TasksActionTypes.GET_TASKS_SUCCESS: {
-            const combinedWithPreviews = action.payload.array
-                .map((task: any, index: number): Task => ({
-                    instance: task,
-                    preview: action.payload.previews[index],
-                }));
-
             return {
                 ...state,
                 initialized: true,
+                fetching: false,
                 count: action.payload.count,
-                current: combinedWithPreviews,
-                gettingQuery: { ...action.payload.query },
+                current: action.payload.array,
             };
         }
         case TasksActionTypes.GET_TASKS_FAILED:
             return {
                 ...state,
                 initialized: true,
-                count: 0,
-                current: [],
-                gettingQuery: { ...action.payload.query },
-                tasksFetchingError: action.payload.error,
+                fetching: false,
             };
-        case TasksActionTypes.DUMP_ANNOTATIONS: {
-            const { task } = action.payload;
-            const { dumper } = action.payload;
-
-            const tasksDumpingActivities = {
-                ...state.activities.dumps,
-            };
-
-            const theTaskDumpingActivities = [...tasksDumpingActivities.byTask[task.id] || []];
-            if (!theTaskDumpingActivities.includes(dumper.name)) {
-                theTaskDumpingActivities.push(dumper.name);
-            } else {
-                throw Error('Dump with the same dumper for this same task has been already started');
-            }
-            tasksDumpingActivities.byTask[task.id] = theTaskDumpingActivities;
-
-            return {
-                ...state,
-                activities: {
-                    ...state.activities,
-                    dumps: tasksDumpingActivities,
-                },
-            };
-        }
-        case TasksActionTypes.DUMP_ANNOTATIONS_SUCCESS: {
-            const { task } = action.payload;
-            const { dumper } = action.payload;
-
-            const tasksDumpingActivities = {
-                ...state.activities.dumps,
-            };
-
-            const theTaskDumpingActivities = tasksDumpingActivities.byTask[task.id]
-                .filter((dumperName: string): boolean => dumperName !== dumper.name);
-
-            tasksDumpingActivities.byTask[task.id] = theTaskDumpingActivities;
-
-            return {
-                ...state,
-                activities: {
-                    ...state.activities,
-                    dumps: tasksDumpingActivities,
-                },
-            };
-        }
-        case TasksActionTypes.DUMP_ANNOTATIONS_FAILED: {
-            const { task } = action.payload;
-            const { dumper } = action.payload;
-            const dumpingError = action.payload.error;
-
-            const tasksDumpingActivities = {
-                ...state.activities.dumps,
-                dumpingError,
-            };
-
-            const theTaskDumpingActivities = tasksDumpingActivities.byTask[task.id]
-                .filter((dumperName: string): boolean => dumperName !== dumper.name);
-
-            tasksDumpingActivities.byTask[task.id] = theTaskDumpingActivities;
-
-            return {
-                ...state,
-                activities: {
-                    ...state.activities,
-                    dumps: tasksDumpingActivities,
-                },
-            };
-        }
-        case TasksActionTypes.LOAD_ANNOTATIONS: {
-            const { task } = action.payload;
-            const { loader } = action.payload;
-
-            const tasksLoadingActivity = {
-                ...state.activities.loads,
-            };
-
-            if (task.id in tasksLoadingActivity.byTask) {
-                throw Error('Load for this task has been already started');
-            }
-
-            tasksLoadingActivity.byTask[task.id] = loader.name;
-
-            return {
-                ...state,
-                activities: {
-                    ...state.activities,
-                    loads: tasksLoadingActivity,
-                },
-            };
-        }
-        case TasksActionTypes.LOAD_ANNOTATIONS_SUCCESS: {
-            const { task } = action.payload;
-
-            const tasksLoadingActivity = {
-                ...state.activities.loads,
-            };
-
-            delete tasksLoadingActivity.byTask[task.id];
-
-            return {
-                ...state,
-                activities: {
-                    ...state.activities,
-                    loads: {
-                        ...tasksLoadingActivity,
-                        loadingDoneMessage: `Annotations have been loaded to the task ${task.id}`,
-                    },
-                },
-            };
-        }
-        case TasksActionTypes.LOAD_ANNOTATIONS_FAILED: {
-            const { task } = action.payload;
-            const loadingError = action.payload.error;
-
-            const tasksLoadingActivity = {
-                ...state.activities.loads,
-            };
-
-            delete tasksLoadingActivity.byTask[task.id];
-
-            return {
-                ...state,
-                activities: {
-                    ...state.activities,
-                    loads: {
-                        ...tasksLoadingActivity,
-                        loadingError,
-                    },
-                },
-            };
-        }
         case TasksActionTypes.DELETE_TASK: {
             const { taskID } = action.payload;
+            const { deletes } = state.activities;
 
-            const deletesActivities = state.activities.deletes;
-
-            const activities = { ...state.activities };
-            activities.deletes = { ...activities.deletes };
-
-            activities.deletes.byTask[taskID] = false;
-
-            return {
-                ...state,
-                activities: {
-                    ...state.activities,
-                    deletes: deletesActivities,
-                },
-            };
-        }
-        case TasksActionTypes.DELETE_TASK_SUCCESS: {
-            const { taskID } = action.payload;
-
-            const deletesActivities = state.activities.deletes;
-
-            const activities = { ...state.activities };
-            activities.deletes = { ...activities.deletes };
-
-            activities.deletes.byTask[taskID] = true;
-
-            return {
-                ...state,
-                activities: {
-                    ...state.activities,
-                    deletes: deletesActivities,
-                },
-            };
-        }
-        case TasksActionTypes.DELETE_TASK_FAILED: {
-            const { taskID } = action.payload;
-            const { error } = action.payload;
-
-            const deletesActivities = state.activities.deletes;
-
-            const activities = { ...state.activities };
-            activities.deletes = { ...activities.deletes };
-
-            delete activities.deletes.byTask[taskID];
+            deletes[taskID] = false;
 
             return {
                 ...state,
                 activities: {
                     ...state.activities,
                     deletes: {
-                        ...deletesActivities,
-                        deletingError: error,
+                        ...deletes,
+                    },
+                },
+            };
+        }
+        case TasksActionTypes.DELETE_TASK_SUCCESS: {
+            const { taskID } = action.payload;
+            const { deletes } = state.activities;
+
+            deletes[taskID] = true;
+
+            return {
+                ...state,
+                activities: {
+                    ...state.activities,
+                    deletes: {
+                        ...deletes,
+                    },
+                },
+            };
+        }
+        case TasksActionTypes.DELETE_TASK_FAILED: {
+            const { taskID } = action.payload;
+            const { deletes } = state.activities;
+
+            delete deletes[taskID];
+
+            return {
+                ...state,
+                activities: {
+                    ...state.activities,
+                    deletes: {
+                        ...deletes,
+                    },
+                },
+            };
+        }
+        case TasksActionTypes.HIDE_EMPTY_TASKS: {
+            return {
+                ...state,
+                hideEmpty: action.payload.hideEmpty,
+            };
+        }
+        case TasksActionTypes.SWITCH_MOVE_TASK_MODAL_VISIBLE: {
+            return {
+                ...state,
+                moveTask: {
+                    ...state.moveTask,
+                    modalVisible: action.payload.visible,
+                    taskId: action.payload.taskId,
+                },
+            };
+        }
+        case AnnotationActionTypes.CLOSE_JOB: {
+            return {
+                ...state,
+            };
+        }
+        case BoundariesActionTypes.RESET_AFTER_ERROR:
+        case AuthActionTypes.LOGOUT_SUCCESS: {
+            return { ...defaultState };
+        }
+        case TasksActionTypes.GET_TASK_PREVIEW: {
+            const { taskID } = action.payload;
+            const { previews } = state;
+            return {
+                ...state,
+                previews: {
+                    ...previews,
+                    [taskID]: {
+                        preview: '',
+                        fetching: true,
+                        initialized: false,
+                    },
+                },
+            };
+        }
+        case TasksActionTypes.GET_TASK_PREVIEW_SUCCESS: {
+            const { taskID, preview } = action.payload;
+            const { previews } = state;
+            return {
+                ...state,
+                previews: {
+                    ...previews,
+                    [taskID]: {
+                        preview,
+                        fetching: false,
+                        initialized: true,
+                    },
+                },
+            };
+        }
+        case TasksActionTypes.GET_TASK_PREVIEW_FAILED: {
+            const { taskID } = action.payload;
+            const { previews } = state;
+            return {
+                ...state,
+                previews: {
+                    ...previews,
+                    [taskID]: {
+                        ...previews[taskID],
+                        fetching: false,
+                        initialized: true,
                     },
                 },
             };

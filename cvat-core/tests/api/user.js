@@ -1,24 +1,20 @@
-/*
- * Copyright (C) 2018 Intel Corporation
- * SPDX-License-Identifier: MIT
-*/
-
-/* global
-    require:false
-    jest:false
-    describe:false
-*/
+// Copyright (C) 2020-2022 Intel Corporation
+// Copyright (C) 2022 CVAT.ai Corporation
+//
+// SPDX-License-Identifier: MIT
 
 // Setup mock for a server
 jest.mock('../../src/server-proxy', () => {
-    const mock = require('../mocks/server-proxy.mock');
-    return mock;
+    return {
+        __esModule: true,
+        default: require('../mocks/server-proxy.mock'),
+    };
 });
 
 // Initialize api
-window.cvat = require('../../src/api');
+window.cvat = require('../../src/api').default;
 
-const User = require('../../src/user');
+const User = require('../../src/user').default;
 
 // Test cases
 describe('Feature: get a list of users', () => {
@@ -41,14 +37,18 @@ describe('Feature: get a list of users', () => {
     });
 
     test('get users with unknown filter key', async () => {
-        expect(window.cvat.users.get({
-            unknown: '50',
-        })).rejects.toThrow(window.cvat.exceptions.ArgumentError);
+        expect(
+            window.cvat.users.get({
+                unknown: '50',
+            }),
+        ).rejects.toThrow(window.cvat.exceptions.ArgumentError);
     });
 
     test('get users with invalid filter key', async () => {
-        expect(window.cvat.users.get({
-            self: 1,
-        })).rejects.toThrow(window.cvat.exceptions.ArgumentError);
+        expect(
+            window.cvat.users.get({
+                self: 1,
+            }),
+        ).rejects.toThrow(window.cvat.exceptions.ArgumentError);
     });
 });

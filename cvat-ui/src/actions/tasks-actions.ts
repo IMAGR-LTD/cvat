@@ -1,8 +1,14 @@
+// Copyright (C) 2019-2022 Intel Corporation
+// Copyright (C) 2022-2023 CVAT.ai Corporation
+//
+// SPDX-License-Identifier: MIT
+
 import { AnyAction, Dispatch, ActionCreator } from 'redux';
 import { ThunkAction } from 'redux-thunk';
-import { TasksQuery } from '../reducers/interfaces';
-
-import getCore from '../core';
+import { TasksQuery, StorageLocation } from 'reducers';
+import { getCore, Storage } from 'cvat-core-wrapper';
+import { filterNull } from 'utils/filter-null';
+import { getInferenceStatusAsync } from './models-actions';
 
 const cvat = getCore();
 
@@ -10,196 +16,72 @@ export enum TasksActionTypes {
     GET_TASKS = 'GET_TASKS',
     GET_TASKS_SUCCESS = 'GET_TASKS_SUCCESS',
     GET_TASKS_FAILED = 'GET_TASKS_FAILED',
-    LOAD_ANNOTATIONS = 'LOAD_ANNOTATIONS',
-    LOAD_ANNOTATIONS_SUCCESS = 'LOAD_ANNOTATIONS_SUCCESS',
-    LOAD_ANNOTATIONS_FAILED = 'LOAD_ANNOTATIONS_FAILED',
-    DUMP_ANNOTATIONS = 'DUMP_ANNOTATIONS',
-    DUMP_ANNOTATIONS_SUCCESS = 'DUMP_ANNOTATIONS_SUCCESS',
-    DUMP_ANNOTATIONS_FAILED = 'DUMP_ANNOTATIONS_FAILED',
     DELETE_TASK = 'DELETE_TASK',
     DELETE_TASK_SUCCESS = 'DELETE_TASK_SUCCESS',
     DELETE_TASK_FAILED = 'DELETE_TASK_FAILED',
+    CREATE_TASK_FAILED = 'CREATE_TASK_FAILED',
+    UPDATE_JOB_FAILED = 'UPDATE_JOB_FAILED',
+    HIDE_EMPTY_TASKS = 'HIDE_EMPTY_TASKS',
+    SWITCH_MOVE_TASK_MODAL_VISIBLE = 'SWITCH_MOVE_TASK_MODAL_VISIBLE',
+    GET_TASK_PREVIEW = 'GET_TASK_PREVIEW',
+    GET_TASK_PREVIEW_SUCCESS = 'GET_TASK_PREVIEW_SUCCESS',
+    GET_TASK_PREVIEW_FAILED = 'GET_TASK_PREVIEW_FAILED',
 }
 
-function getTasks(): AnyAction {
+function getTasks(query: Partial<TasksQuery>, updateQuery: boolean): AnyAction {
     const action = {
         type: TasksActionTypes.GET_TASKS,
-        payload: {},
+        payload: {
+            updateQuery,
+            query,
+        },
     };
 
     return action;
 }
 
-function getTasksSuccess(array: any[], previews: string[],
-    count: number, query: TasksQuery): AnyAction {
+export function getTasksSuccess(array: any[], count: number): AnyAction {
     const action = {
         type: TasksActionTypes.GET_TASKS_SUCCESS,
         payload: {
-            previews,
             array,
             count,
-            query,
         },
     };
 
     return action;
 }
 
-function getTasksFailed(error: any, query: TasksQuery): AnyAction {
+function getTasksFailed(error: any): AnyAction {
     const action = {
         type: TasksActionTypes.GET_TASKS_FAILED,
-        payload: {
-            error,
-            query,
-        },
+        payload: { error },
     };
 
     return action;
 }
 
-export function getTasksAsync(query: TasksQuery):
-ThunkAction<Promise<void>, {}, {}, AnyAction> {
+export function getTasksAsync(
+    query: Partial<TasksQuery>,
+    updateQuery = true,
+): ThunkAction<Promise<void>, {}, {}, AnyAction> {
     return async (dispatch: ActionCreator<Dispatch>): Promise<void> => {
-        dispatch(getTasks());
+        dispatch(getTasks(query, updateQuery));
 
-        // We need remove all keys with null values from query
-        const filteredQuery = { ...query };
-        for (const key in filteredQuery) {
-            if (filteredQuery[key] === null) {
-                delete filteredQuery[key];
-            }
-        }
+        const filteredQuery = filterNull(query);
 
         let result = null;
         try {
             result = await cvat.tasks.get(filteredQuery);
         } catch (error) {
-            dispatch(getTasksFailed(error, query));
+            dispatch(getTasksFailed(error));
             return;
         }
 
         const array = Array.from(result);
-        const previews = [];
-        const promises = array
-            .map((task): string => (task as any).frames.preview());
 
-        for (const promise of promises) {
-            try {
-                // a tricky moment
-                // await is okay in loop in this case, there aren't any performance bottleneck
-                // because all server requests have been already sent in parallel
-
-                // eslint-disable-next-line no-await-in-loop
-                previews.push(await promise);
-            } catch (error) {
-                previews.push('');
-            }
-        }
-
-        dispatch(getTasksSuccess(array, previews, result.count, query));
-    };
-}
-
-function dumpAnnotation(task: any, dumper: any): AnyAction {
-    const action = {
-        type: TasksActionTypes.DUMP_ANNOTATIONS,
-        payload: {
-            task,
-            dumper,
-        },
-    };
-
-    return action;
-}
-
-function dumpAnnotationSuccess(task: any, dumper: any): AnyAction {
-    const action = {
-        type: TasksActionTypes.DUMP_ANNOTATIONS_SUCCESS,
-        payload: {
-            task,
-            dumper,
-        },
-    };
-
-    return action;
-}
-
-function dumpAnnotationFailed(task: any, dumper: any, error: any): AnyAction {
-    const action = {
-        type: TasksActionTypes.DUMP_ANNOTATIONS_FAILED,
-        payload: {
-            task,
-            dumper,
-            error,
-        },
-    };
-
-    return action;
-}
-
-export function dumpAnnotationsAsync(task: any, dumper: any):
-ThunkAction<Promise<void>, {}, {}, AnyAction> {
-    return async (dispatch: ActionCreator<Dispatch>): Promise<void> => {
-        try {
-            dispatch(dumpAnnotation(task, dumper));
-            const url = await task.annotations.dump(task.name, dumper);
-            window.location.assign(url);
-        } catch (error) {
-            dispatch(dumpAnnotationFailed(task, dumper, error));
-            return;
-        }
-
-        dispatch(dumpAnnotationSuccess(task, dumper));
-    };
-}
-
-function loadAnnotations(task: any, loader: any): AnyAction {
-    const action = {
-        type: TasksActionTypes.LOAD_ANNOTATIONS,
-        payload: {
-            task,
-            loader,
-        },
-    };
-
-    return action;
-}
-
-function loadAnnotationsSuccess(task: any): AnyAction {
-    const action = {
-        type: TasksActionTypes.LOAD_ANNOTATIONS_SUCCESS,
-        payload: {
-            task,
-        },
-    };
-
-    return action;
-}
-
-function loadAnnotationsFailed(task: any, error: any): AnyAction {
-    const action = {
-        type: TasksActionTypes.LOAD_ANNOTATIONS_FAILED,
-        payload: {
-            task,
-            error,
-        },
-    };
-
-    return action;
-}
-
-export function loadAnnotationsAsync(task: any, loader: any, file: File):
-ThunkAction<Promise<void>, {}, {}, AnyAction> {
-    return async (dispatch: ActionCreator<Dispatch>): Promise<void> => {
-        try {
-            dispatch(loadAnnotations(task, loader));
-            await task.annotations.upload(file, loader);
-        } catch (error) {
-            dispatch(loadAnnotationsFailed(task, error));
-            return;
-        }
-
-        dispatch(loadAnnotationsSuccess(task));
+        dispatch(getInferenceStatusAsync());
+        dispatch(getTasksSuccess(array, result.count));
     };
 }
 
@@ -237,8 +119,7 @@ function deleteTaskFailed(taskID: number, error: any): AnyAction {
     return action;
 }
 
-export function deleteTaskAsync(taskInstance: any):
-ThunkAction<Promise<void>, {}, {}, AnyAction> {
+export function deleteTaskAsync(taskInstance: any): ThunkAction<Promise<void>, {}, {}, AnyAction> {
     return async (dispatch: ActionCreator<Dispatch>): Promise<void> => {
         try {
             dispatch(deleteTask(taskInstance.id));
@@ -249,5 +130,187 @@ ThunkAction<Promise<void>, {}, {}, AnyAction> {
         }
 
         dispatch(deleteTaskSuccess(taskInstance.id));
+    };
+}
+
+function createTaskFailed(error: any): AnyAction {
+    const action = {
+        type: TasksActionTypes.CREATE_TASK_FAILED,
+        payload: {
+            error,
+        },
+    };
+
+    return action;
+}
+
+export function createTaskAsync(data: any, onProgress?: (status: string) => void):
+ThunkAction<Promise<void>, {}, {}, AnyAction> {
+    return async (dispatch): Promise<any> => {
+        const description: any = {
+            name: data.basic.name,
+            labels: data.labels,
+            image_quality: 70,
+            use_zip_chunks: data.advanced.useZipChunks,
+            use_cache: data.advanced.useCache,
+            sorting_method: data.advanced.sortingMethod,
+            source_storage: new Storage(data.advanced.sourceStorage || { location: StorageLocation.LOCAL }).toJSON(),
+            target_storage: new Storage(data.advanced.targetStorage || { location: StorageLocation.LOCAL }).toJSON(),
+        };
+
+        if (data.projectId) {
+            description.project_id = data.projectId;
+        }
+        if (data.advanced.bugTracker) {
+            description.bug_tracker = data.advanced.bugTracker;
+        }
+        if (data.advanced.segmentSize) {
+            description.segment_size = +data.advanced.segmentSize;
+        }
+        if (data.advanced.overlapSize) {
+            description.overlap = data.advanced.overlapSize;
+        }
+        if (data.advanced.startFrame) {
+            description.start_frame = +data.advanced.startFrame;
+        }
+        if (data.advanced.stopFrame) {
+            description.stop_frame = +data.advanced.stopFrame;
+        }
+        if (data.advanced.frameFilter) {
+            description.frame_filter = data.advanced.frameFilter;
+        }
+        if (data.advanced.imageQuality) {
+            description.image_quality = +data.advanced.imageQuality;
+        }
+        if (data.advanced.dataChunkSize) {
+            description.data_chunk_size = +data.advanced.dataChunkSize;
+        }
+        if (data.advanced.copyData) {
+            description.copy_data = data.advanced.copyData;
+        }
+        if (data.subset) {
+            description.subset = data.subset;
+        }
+        if (data.cloudStorageId) {
+            description.cloud_storage_id = data.cloudStorageId;
+        }
+
+        const taskInstance = new cvat.classes.Task(description);
+        taskInstance.clientFiles = data.files.local;
+        taskInstance.serverFiles = data.files.share.concat(data.files.cloudStorage);
+        taskInstance.remoteFiles = data.files.remote;
+
+        if (data.advanced.repository) {
+            const [gitPlugin] = (await cvat.plugins.list()).filter((plugin: any): boolean => plugin.name === 'Git');
+
+            if (gitPlugin) {
+                gitPlugin.callbacks.onStatusChange = (status: string): void => {
+                    onProgress?.(status);
+                };
+                gitPlugin.data.task = taskInstance;
+                gitPlugin.data.repos = data.advanced.repository;
+                gitPlugin.data.format = data.advanced.format;
+                gitPlugin.data.lfs = data.advanced.lfs;
+            }
+        }
+
+        try {
+            const savedTask = await taskInstance.save((status: string, progress: number): void => {
+                onProgress?.(status + (progress !== null ? ` ${Math.floor(progress * 100)}%` : ''));
+            });
+            return savedTask;
+        } catch (error) {
+            dispatch(createTaskFailed(error));
+            throw error;
+        }
+    };
+}
+
+function updateJobFailed(jobID: number, error: any): AnyAction {
+    const action = {
+        type: TasksActionTypes.UPDATE_JOB_FAILED,
+        payload: { jobID, error },
+    };
+
+    return action;
+}
+
+export function updateJobAsync(jobInstance: any): ThunkAction<Promise<void>, {}, {}, AnyAction> {
+    return async (dispatch: ActionCreator<Dispatch>): Promise<void> => {
+        try {
+            await jobInstance.save();
+        } catch (error) {
+            dispatch(updateJobFailed(jobInstance.id, error));
+        }
+    };
+}
+
+export function hideEmptyTasks(hideEmpty: boolean): AnyAction {
+    const action = {
+        type: TasksActionTypes.HIDE_EMPTY_TASKS,
+        payload: {
+            hideEmpty,
+        },
+    };
+
+    return action;
+}
+
+export function switchMoveTaskModalVisible(visible: boolean, taskId: number | null = null): AnyAction {
+    const action = {
+        type: TasksActionTypes.SWITCH_MOVE_TASK_MODAL_VISIBLE,
+        payload: {
+            taskId,
+            visible,
+        },
+    };
+
+    return action;
+}
+
+function getTaskPreview(taskID: number): AnyAction {
+    const action = {
+        type: TasksActionTypes.GET_TASK_PREVIEW,
+        payload: {
+            taskID,
+        },
+    };
+
+    return action;
+}
+
+function getTaskPreviewSuccess(taskID: number, preview: string): AnyAction {
+    const action = {
+        type: TasksActionTypes.GET_TASK_PREVIEW_SUCCESS,
+        payload: {
+            taskID,
+            preview,
+        },
+    };
+
+    return action;
+}
+
+function getTaskPreviewFailed(taskID: number, error: any): AnyAction {
+    const action = {
+        type: TasksActionTypes.GET_TASK_PREVIEW_FAILED,
+        payload: {
+            taskID,
+            error,
+        },
+    };
+
+    return action;
+}
+
+export function getTaskPreviewAsync(taskInstance: any): ThunkAction<Promise<void>, {}, {}, AnyAction> {
+    return async (dispatch: ActionCreator<Dispatch>): Promise<void> => {
+        try {
+            dispatch(getTaskPreview(taskInstance.id));
+            const result = await taskInstance.frames.preview();
+            dispatch(getTaskPreviewSuccess(taskInstance.id, result));
+        } catch (error) {
+            dispatch(getTaskPreviewFailed(taskInstance.id, error));
+        }
     };
 }

@@ -1,43 +1,41 @@
-import { AnyAction, Dispatch, ActionCreator } from 'redux';
-import { ThunkAction } from 'redux-thunk';
+// Copyright (C) 2020-2022 Intel Corporation
+//
+// SPDX-License-Identifier: MIT
 
-import getCore from '../core';
+import { ActionUnion, createAction, ThunkAction } from 'utils/redux';
+import { getCore } from 'cvat-core-wrapper';
 
 const cvat = getCore();
 
 export enum FormatsActionTypes {
-    GETTING_FORMATS_SUCCESS = 'GETTING_FORMATS_SUCCESS',
-    GETTING_FORMATS_FAILED = 'GETTING_FORMATS_FAILED',
+    GET_FORMATS = 'GET_FORMATS',
+    GET_FORMATS_SUCCESS = 'GET_FORMATS_SUCCESS',
+    GET_FORMATS_FAILED = 'GET_FORMATS_FAILED',
 }
 
-export function gettingFormatsSuccess(formats: any): AnyAction {
-    return {
-        type: FormatsActionTypes.GETTING_FORMATS_SUCCESS,
-        payload: {
-            formats,
-        },
-    };
-}
+const formatsActions = {
+    getFormats: () => createAction(FormatsActionTypes.GET_FORMATS),
+    getFormatsSuccess: (annotationFormats: any) => (
+        createAction(FormatsActionTypes.GET_FORMATS_SUCCESS, {
+            annotationFormats,
+        })
+    ),
+    getFormatsFailed: (error: any) => createAction(FormatsActionTypes.GET_FORMATS_FAILED, { error }),
+};
 
-export function gettingFormatsFailed(error: any): AnyAction {
-    return {
-        type: FormatsActionTypes.GETTING_FORMATS_FAILED,
-        payload: {
-            error,
-        },
-    };
-}
+export type FormatsActions = ActionUnion<typeof formatsActions>;
 
-export function gettingFormatsAsync(): ThunkAction<Promise<void>, {}, {}, AnyAction> {
-    return async (dispatch: ActionCreator<Dispatch>): Promise<void> => {
-        let formats = null;
+export function getFormatsAsync(): ThunkAction {
+    return async (dispatch): Promise<void> => {
+        dispatch(formatsActions.getFormats());
+        let annotationFormats = null;
+
         try {
-            formats = await cvat.server.formats();
-        } catch (error) {
-            dispatch(gettingFormatsFailed(error));
-            return;
-        }
+            annotationFormats = await cvat.server.formats();
 
-        dispatch(gettingFormatsSuccess(formats));
+            dispatch(formatsActions.getFormatsSuccess(annotationFormats));
+        } catch (error) {
+            dispatch(formatsActions.getFormatsFailed(error));
+        }
     };
 }

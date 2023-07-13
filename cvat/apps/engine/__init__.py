@@ -1,5 +1,7 @@
-# Copyright (C) 2018 Intel Corporation
+# Copyright (C) 2018-2022 Intel Corporation
+# Copyright (C) 2022 CVAT.ai Corporation
 #
 # SPDX-License-Identifier: MIT
 
-default_app_config = 'cvat.apps.engine.apps.EngineConfig'
+
+from .schema import * # force import of declared symbols

@@ -1,31 +1,48 @@
-import { AnyAction } from 'redux';
-import { FormatsActionTypes } from '../actions/formats-actions';
+// Copyright (C) 2020-2022 Intel Corporation
+//
+// SPDX-License-Identifier: MIT
 
-import { FormatsState } from './interfaces';
+import { BoundariesActions, BoundariesActionTypes } from 'actions/boundaries-actions';
+import { FormatsActionTypes, FormatsActions } from 'actions/formats-actions';
+import { AuthActionTypes, AuthActions } from 'actions/auth-actions';
+
+import { FormatsState } from '.';
 
 const defaultState: FormatsState = {
-    loaders: [],
-    dumpers: [],
-    gettingFormatsError: null,
+    annotationFormats: null,
     initialized: false,
+    fetching: false,
 };
 
-export default (state = defaultState, action: AnyAction): FormatsState => {
+export default (
+    state: FormatsState = defaultState,
+    action: FormatsActions | AuthActions | BoundariesActions,
+): FormatsState => {
     switch (action.type) {
-        case FormatsActionTypes.GETTING_FORMATS_SUCCESS:
+        case FormatsActionTypes.GET_FORMATS: {
+            return {
+                ...state,
+                fetching: true,
+                initialized: false,
+            };
+        }
+        case FormatsActionTypes.GET_FORMATS_SUCCESS:
             return {
                 ...state,
                 initialized: true,
-                gettingFormatsError: null,
-                dumpers: action.payload.formats.map((format: any): any[] => format.dumpers).flat(),
-                loaders: action.payload.formats.map((format: any): any[] => format.loaders).flat(),
+                fetching: false,
+                annotationFormats: action.payload.annotationFormats,
             };
-        case FormatsActionTypes.GETTING_FORMATS_FAILED:
+        case FormatsActionTypes.GET_FORMATS_FAILED:
             return {
                 ...state,
                 initialized: true,
-                gettingFormatsError: action.payload.error,
+                fetching: false,
             };
+        case BoundariesActionTypes.RESET_AFTER_ERROR:
+        case AuthActionTypes.LOGOUT_SUCCESS: {
+            return { ...defaultState };
+        }
         default:
             return state;
     }
